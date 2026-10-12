@@ -1,0 +1,21 @@
+// swift-tools-version:5.9
+// Kazumi macOS native port. GPL-3.0-or-later. See LICENSE.
+import PackageDescription
+
+let package = Package(
+    name: "KazumiNative",
+    products: [
+        .library(name: "KazumiCore", targets: ["KazumiCore"]),
+    ],
+    targets: [
+        .target(
+            name: "KazumiCore",
+            path: "Sources/KazumiCore"
+        ),
+        .testTarget(
+            name: "KazumiCoreTests",
+            dependencies: ["KazumiCore"],
+            path: "Tests/KazumiCoreTests"
+        ),
+    ]
+)
