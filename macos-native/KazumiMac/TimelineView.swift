@@ -30,6 +30,7 @@ struct SeasonCalendarView: View {
                                 )
                             }
                             .buttonStyle(.plain)
+                            .hoverLift()
                         }
                     }
                 }

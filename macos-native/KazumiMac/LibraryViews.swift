@@ -40,6 +40,7 @@ struct FavoritesView: View {
                                 FavoriteCard(item: item)
                             }
                             .buttonStyle(.plain)
+                            .hoverLift()
                             .contextMenu {
                                 Button("取消追番", role: .destructive) { model.removeFavorite(item.subjectID) }
                             }
@@ -104,6 +105,7 @@ struct ContinueCard: View {
 
 struct HistoryView: View {
     @Environment(AppModel.self) private var model
+    @State private var confirmClear = false
 
     var body: some View {
         @Bindable var model = model
@@ -157,9 +159,16 @@ struct HistoryView: View {
         .toolbar {
             if !model.history.isEmpty {
                 ToolbarItem {
-                    Button("清空") { model.clearHistory() }
+                    Button("清空") { confirmClear = true }
+                        .accessibilityLabel("清空播放历史")
                 }
             }
+        }
+        .confirmationDialog("清空播放历史？", isPresented: $confirmClear, titleVisibility: .visible) {
+            Button("清空", role: .destructive) { model.clearHistory() }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("本机的播放进度会被删掉。")
         }
     }
 }

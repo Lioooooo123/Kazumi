@@ -42,6 +42,7 @@ struct RootView: View {
             .background(KazumiTheme.canvas(scheme, oled: model.settings.oled))
         }
         .background(KazumiTheme.canvas(scheme, oled: model.settings.oled))
+        .navigationSplitViewStyle(.balanced)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button("搜索", systemImage: "magnifyingglass") { model.sidebar = .search }
@@ -89,6 +90,7 @@ struct RootView: View {
                     .transition(.opacity)
             }
         }
+        .animation(.easeInOut(duration: 0.2), value: model.nowPlaying?.pageURL)
     }
 
     /// `List` selection is optional. Clearing the highlight should not leave the detail blank.

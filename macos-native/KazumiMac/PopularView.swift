@@ -75,6 +75,8 @@ struct PopularView: View {
                 } label: {
                     Image(systemName: "arrow.clockwise")
                 }
+                .help("刷新推荐")
+                .accessibilityLabel("刷新推荐")
                 .help("刷新")
             }
         }

@@ -7,6 +7,11 @@ struct SettingsView: View {
 
     var body: some View {
         Form {
+            Section {
+                Text("播放、下载和同步都在这里。比较慢的操作会在窗口底部停留几秒。")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
             Section("外观") {
                 Picker("深色模式", selection: themeBinding) {
                     Text("跟随系统").tag("system")

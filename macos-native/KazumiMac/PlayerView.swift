@@ -179,6 +179,7 @@ struct PlayerScreen: View {
                 }
                 .buttonStyle(.plain)
                 .help(playing ? "暂停" : "播放")
+                .accessibilityLabel(playing ? "暂停" : "播放")
                 Button { playNext() } label: {
                     Image(systemName: "forward.end.fill")
                         .font(.system(size: 16))
@@ -187,6 +188,7 @@ struct PlayerScreen: View {
                 .buttonStyle(.plain)
                 .disabled(nextEpisode == nil)
                 .help("下一集")
+                .accessibilityLabel("下一集")
                 Text("\(clock(time)) / \(clock(duration))")
                     .font(.caption.monospacedDigit())
                 Spacer(minLength: 8)

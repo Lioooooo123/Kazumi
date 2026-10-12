@@ -193,7 +193,24 @@ struct TimelineCard: View {
         .frame(maxWidth: .infinity, minHeight: 156, alignment: .leading)
         .background(KazumiTheme.timelineCard(scheme))
         .clipShape(RoundedRectangle(cornerRadius: KazumiTheme.timelineRadius, style: .continuous))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(subject.displayName)
     }
+}
+
+struct HoverLift: ViewModifier {
+    @State private var hovering = false
+
+    func body(content: Content) -> some View {
+        content
+            .scaleEffect(hovering ? 1.015 : 1)
+            .onHover { hovering = $0 }
+            .animation(.easeOut(duration: 0.16), value: hovering)
+    }
+}
+
+extension View {
+    func hoverLift() -> some View { modifier(HoverLift()) }
 }
 
 struct EmptyHint: View {

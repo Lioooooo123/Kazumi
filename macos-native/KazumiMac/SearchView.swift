@@ -89,6 +89,7 @@ struct SearchView: View {
                                     .background(.background, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                                 }
                                 .buttonStyle(.plain)
+                                .hoverLift()
                             }
                         }
                     }
