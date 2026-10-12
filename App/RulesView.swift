@@ -1,0 +1,438 @@
+// Kazumi macOS native port. GPL-3.0-or-later. See LICENSE.
+import AppKit
+import KazumiCore
+import SwiftUI
+import UniformTypeIdentifiers
+
+struct RulesView: View {
+    @Environment(AppModel.self) private var model
+    @State private var query = ""
+    @State private var filter = RuleCatalogFilter.all
+    @State private var sort = RuleCatalogSort.lastUpdate
+    @State private var remoteURL = ""
+    @State private var pasted = ""
+    @State private var message = ""
+    @State private var importing = false
+    @State private var editing: PluginRule?
+    @State private var section = RuleSection.installed
+
+    private enum RuleSection: String, CaseIterable {
+        case installed = "已安装"
+        case catalog = "规则仓库"
+        case importRules = "导入"
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 28) {
+                Picker("规则页面", selection: $section) {
+                    ForEach(RuleSection.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .accessibilityLabel("规则页面")
+                .frame(maxWidth: 360)
+                switch section {
+                case .installed: installedSection
+                case .catalog: catalogSection
+                case .importRules: importSection
+                }
+                if !message.isEmpty {
+                    Label(message, systemImage: "info.circle")
+                        .font(.callout).foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                }
+            }
+            .padding(KazumiTheme.pagePadding)
+            .frame(maxWidth: 900, alignment: .leading)
+            .frame(maxWidth: .infinity)
+        }
+        .navigationTitle("规则")
+        .toolbar {
+            ToolbarItem {
+                Button("导入", systemImage: "square.and.arrow.down") { section = .importRules }
+                    .help("导入规则")
+            }
+            ToolbarItem {
+                Button("新建规则") { editing = PluginRule.blank() }
+                    .accessibilityLabel("新建规则")
+            }
+        }
+        .sheet(item: $editing) { rule in
+            RuleEditor(rule: rule) { updated in
+                _ = model.importRules((try? PluginImporter.exportJSON([updated], pretty: true)) ?? "")
+                editing = nil
+                message = "已保存 \(updated.name)"
+            }
+        }
+        .task { await model.refreshCatalog() }
+        .fileImporter(isPresented: $importing, allowedContentTypes: [.json, .plainText, .text]) {
+            result in
+            switch result {
+            case .success(let url):
+                let accessed = url.startAccessingSecurityScopedResource()
+                defer { if accessed { url.stopAccessingSecurityScopedResource() } }
+                if let text = try? String(contentsOf: url) {
+                    submit(text)
+                } else {
+                    message = "无法读取文件"
+                }
+            case .failure(let error):
+                message = error.localizedDescription
+            }
+        }
+    }
+
+    private var installedPlugins: [PluginRule] {
+        model.rules.map(\.plugin)
+    }
+
+    private var visibleCatalog: [RuleCatalogItem] {
+        RuleCatalog.visible(
+            items: model.catalog,
+            installed: installedPlugins,
+            query: query,
+            filter: filter,
+            sort: sort
+        )
+    }
+
+    private var catalogSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("规则仓库")
+                .font(.title3.weight(.semibold))
+            Text("选择规则并安装，即可搜索对应网站的片源。已安装的规则会显示更新状态。")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+            if let progress = catalogProgress {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text(progress)
+                        .font(.callout)
+                }
+                .padding(10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(
+                    Color.accentColor.opacity(0.12),
+                    in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+                )
+                .accessibilityLabel(progress)
+            }
+            HStack {
+                Toggle(
+                    "使用规则镜像",
+                    isOn: Binding(
+                        get: { model.settings.useRuleMirror },
+                        set: { enabled in
+                            model.updateSettings { $0.useRuleMirror = enabled }
+                            Task { await model.refreshCatalog() }
+                        }
+                    )
+                )
+                .toggleStyle(.switch)
+                Spacer()
+                Button("全部更新") {
+                    Task {
+                        let text = await model.updateAllRules()
+                        if !text.isEmpty { message = text }
+                    }
+                }
+                .disabled(model.updatingAllRules || model.catalogLoading || updateCount == 0)
+                Button("刷新") { Task { await model.refreshCatalog() } }
+                    .disabled(model.catalogLoading)
+            }
+            if model.catalogLoading {
+                ProgressView().controlSize(.small)
+            }
+            TextField("搜索规则或作者", text: $query)
+                .textFieldStyle(.roundedBorder)
+                .accessibilityLabel("搜索规则或作者")
+            HStack {
+                Picker("筛选", selection: $filter) {
+                    Text("全部 \(model.catalog.count)").tag(RuleCatalogFilter.all)
+                    Text("已安装 \(installedCount)").tag(RuleCatalogFilter.installed)
+                    Text("可更新 \(updateCount)").tag(RuleCatalogFilter.updates)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .accessibilityLabel("规则筛选")
+                Picker("排序", selection: $sort) {
+                    Text("最近更新").tag(RuleCatalogSort.lastUpdate)
+                    Text("名称").tag(RuleCatalogSort.name)
+                }
+                .pickerStyle(.menu)
+                .labelsHidden()
+            }
+            if let error = model.catalogError, model.catalog.isEmpty {
+                ContentUnavailableView(
+                    "无法访问规则仓库",
+                    systemImage: "icloud.slash",
+                    description: Text(error)
+                )
+                .frame(maxWidth: .infinity, minHeight: 180)
+            } else if model.catalogLoading && model.catalog.isEmpty {
+                ProgressView("正在读取规则仓库")
+                    .frame(maxWidth: .infinity, minHeight: 120)
+            } else if visibleCatalog.isEmpty {
+                ContentUnavailableView(
+                    model.catalog.isEmpty ? "仓库暂无规则" : "没有符合条件的规则",
+                    systemImage: "puzzlepiece.extension",
+                    description: Text(model.catalog.isEmpty ? "刷新后会显示官方规则列表。" : "换一个关键词，或改筛选条件。")
+                )
+                .frame(maxWidth: .infinity, minHeight: 160)
+            } else {
+                ForEach(Array(visibleCatalog.enumerated()), id: \.offset) { _, item in
+                    catalogRow(item)
+                }
+            }
+            if let error = model.catalogError, !model.catalog.isEmpty {
+                Text("刷新失败，正在显示上次获取的规则。\(error)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private var installedCount: Int {
+        model.catalog.filter {
+            RuleUpdates.itemStatus(item: $0, installed: installedPlugins) != .install
+        }.count
+    }
+
+    private var updateCount: Int {
+        model.catalog.filter {
+            RuleUpdates.itemStatus(item: $0, installed: installedPlugins) == .update
+        }.count
+    }
+
+    private var catalogProgress: String? {
+        if model.updatingAllRules { return "正在检查并安装可更新的规则" }
+        if !model.busyRuleNames.isEmpty { return "正在安装 \(model.busyRuleNames.count) 条规则" }
+        return nil
+    }
+
+    private func catalogRow(_ item: RuleCatalogItem) -> some View {
+        let status = RuleUpdates.itemStatus(item: item, installed: installedPlugins)
+        return HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(item.name).font(.headline)
+                Text(catalogMeta(item))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+            }
+            Spacer()
+            catalogAction(item, status: status)
+        }
+        .padding(12)
+        .background(.background, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
+    private func catalogMeta(_ item: RuleCatalogItem) -> String {
+        var parts = ["v\(item.version)", item.author.isEmpty ? "未知作者" : item.author]
+        if let date = item.updatedAt {
+            parts.append("更新于 \(Self.dayFormatter.string(from: date))")
+        }
+        if item.antiCrawlerEnabled { parts.append("含验证支持") }
+        return parts.joined(separator: " · ")
+    }
+
+    @ViewBuilder
+    private func catalogAction(_ item: RuleCatalogItem, status: RuleCatalogItemStatus) -> some View {
+        if model.busyRuleNames.contains(item.id) {
+            ProgressView().controlSize(.small)
+        } else if status == .installed {
+            Label("已安装", systemImage: "checkmark")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+        } else {
+            Button(status.actionTitle) {
+                Task {
+                    let text = await model.applyCatalogRule(named: item.name)
+                    if !text.isEmpty { message = text }
+                }
+            }
+            .disabled(model.updatingAllRules)
+            .accessibilityLabel("\(status.actionTitle) \(item.name)")
+        }
+    }
+
+    private var importSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("导入")
+                .font(.title3.weight(.semibold))
+            Text("从文件、剪贴板或网址导入 Kazumi 规则。")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+            HStack {
+                TextField("https:// 规则地址", text: $remoteURL)
+                    .textFieldStyle(.roundedBorder)
+                Button("导入链接") { submit(remoteURL) { remoteURL = "" } }
+                    .disabled(remoteURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+            HStack {
+                Button("从剪贴板导入") { importClipboard() }
+                Button("从文件导入") { importing = true }
+            }
+            TextEditor(text: $pasted)
+                .font(.callout.monospaced())
+                .accessibilityLabel("规则 JSON 或分享链接")
+                .frame(minHeight: 120)
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.primary.opacity(0.12)))
+            Button("导入文本") { submit(pasted) { pasted = "" } }
+                .disabled(pasted.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        }
+    }
+
+    private var installedSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            SectionHeading(
+                title: "已安装", subtitle: "\(model.rules.count) 条规则，\(model.enabledRules.count) 条已启用")
+            if model.rules.isEmpty {
+                EmptyHint(
+                    title: "还没有片源规则", message: "安装规则后，就能在搜索和详情页查找视频。", systemImage: "puzzlepiece.extension",
+                    retryTitle: "浏览规则仓库"
+                ) { section = .catalog }
+            } else {
+                ForEach(model.rules) { installed in
+                    installedRow(installed)
+                }
+            }
+        }
+    }
+
+    private func installedRow(_ installed: InstalledRule) -> some View {
+        let plugin = installed.plugin
+        let availability = RuleUpdates.availability(
+            plugin: plugin, catalog: model.catalog, loaded: model.catalogLoaded)
+        let author = RuleUpdates.displayAuthor(plugin: plugin, catalog: model.catalog)
+        return HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(plugin.name).font(.headline)
+                Text(installedMeta(plugin, author: author, availability: availability))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+            }
+            Spacer()
+            Button("编辑") { editing = plugin }
+                .accessibilityLabel("编辑 \(plugin.name)")
+            if availability == .updatable {
+                if model.busyRuleNames.contains(plugin.id) {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Button("更新") {
+                        Task {
+                            let text = await model.applyCatalogRule(named: plugin.name)
+                            if !text.isEmpty { message = text }
+                        }
+                    }
+                    .disabled(model.updatingAllRules)
+                }
+            }
+            Toggle(
+                "启用",
+                isOn: Binding(
+                    get: { installed.enabled },
+                    set: { model.setRuleEnabled(installed.id, $0) }
+                )
+            )
+            .toggleStyle(.switch)
+            .accessibilityLabel("启用 \(plugin.name)")
+            Button(role: .destructive) {
+                model.deleteRule(installed.id)
+            } label: {
+                Image(systemName: "trash")
+            }
+            .buttonStyle(.borderless)
+            .help("删除 \(plugin.name)")
+            .accessibilityLabel("删除 \(plugin.name)")
+        }
+        .padding(16)
+        .background(.background, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
+    private func installedMeta(
+        _ plugin: PluginRule, author: String, availability: RuleUpdateAvailability
+    ) -> String {
+        let version = plugin.version.isEmpty ? "-" : plugin.version
+        let authorText = author.isEmpty ? "未知" : author
+        return "v\(version) · \(authorText) · \(availability.title)"
+    }
+
+    private func importClipboard() {
+        let text = NSPasteboard.general.string(forType: .string) ?? ""
+        submit(text)
+    }
+
+    private func submit(_ text: String, clear: @escaping () -> Void = {}) {
+        Task {
+            let result = await model.importRemote(text)
+            message = result
+            if result.hasPrefix("导入 ") { clear() }
+        }
+    }
+
+    private static let dayFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter
+    }()
+}
+
+private struct RuleEditor: View {
+    @State private var draft: PluginRule
+    var onSave: (PluginRule) -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    init(rule: PluginRule, onSave: @escaping (PluginRule) -> Void) {
+        _draft = State(initialValue: rule)
+        self.onSave = onSave
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("规则编辑").font(.title3.weight(.semibold))
+            Text("这里改常用字段。复杂的 API 模板仍建议用 JSON 导入。")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+            Form {
+                TextField("名称", text: $draft.name)
+                TextField("版本", text: $draft.version)
+                TextField("作者", text: $draft.author)
+                TextField("API 级别", text: $draft.api)
+                TextField("网站", text: $draft.baseURL)
+                TextField("搜索地址", text: $draft.searchURL)
+                Picker("搜索模式", selection: $draft.searchMode) {
+                    Text("xpath").tag("xpath")
+                    Text("api").tag("api")
+                }
+                TextField("搜索列表", text: $draft.searchList)
+                TextField("标题", text: $draft.searchName)
+                TextField("链接", text: $draft.searchResult)
+                Picker("分集模式", selection: $draft.chapterMode) {
+                    Text("xpath").tag("xpath")
+                    Text("api").tag("api")
+                }
+                TextField("分集列表", text: $draft.chapterRoads)
+                TextField("分集链接", text: $draft.chapterResult)
+                Toggle("旧版解析", isOn: $draft.useLegacyParser)
+            }
+            .formStyle(.grouped)
+            HStack {
+                Spacer()
+                Button("取消") { dismiss() }
+                Button("保存") {
+                    onSave(draft)
+                    dismiss()
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(draft.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        }
+        .padding(16)
+        .frame(minWidth: 560, minHeight: 520)
+    }
+}
