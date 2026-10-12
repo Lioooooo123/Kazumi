@@ -45,6 +45,7 @@ public struct HistoryRecord: Equatable, Sendable, Identifiable, Codable {
     public var position: Double
     public var duration: Double
     public var updatedAt: Date
+    public var playbackContext: PlaybackContext?
 
     public var displayName: String { nameCN.isEmpty ? name : nameCN }
     public var progress: Double {
@@ -61,7 +62,8 @@ public struct HistoryRecord: Equatable, Sendable, Identifiable, Codable {
         pageURL: String,
         position: Double,
         duration: Double,
-        updatedAt: Date = Date()
+        updatedAt: Date = Date(),
+        playbackContext: PlaybackContext? = nil
     ) {
         self.id = pageURL
         self.subjectID = subjectID
@@ -73,6 +75,7 @@ public struct HistoryRecord: Equatable, Sendable, Identifiable, Codable {
         self.position = position
         self.duration = duration
         self.updatedAt = updatedAt
+        self.playbackContext = playbackContext
     }
 }
 

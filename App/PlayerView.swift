@@ -3,6 +3,7 @@
 @preconcurrency import AVKit
 @preconcurrency import AppKit
 import KazumiCore
+import MPVBridge
 import SwiftUI
 
 struct PlayerScreen: View {
@@ -10,6 +11,15 @@ struct PlayerScreen: View {
     @Environment(AppModel.self) private var model
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var controller = PlaybackController()
+    @State private var resolver = PageSniffer()
+    @State private var reloadToken = UUID()
+    @State private var preparationToken = UUID()
+    @State private var preferWebSniff = false
+    @State private var sniffAttempted = false
+    @State private var lastPlaybackError: String?
+    @State private var resumePosition: Double?
+    @State private var volume = 1.0
+    @State private var buffering = false
     @State private var time: Double = 0
     @State private var duration: Double = 0
     @State private var playing = false
@@ -39,10 +49,13 @@ struct PlayerScreen: View {
         ZStack {
             Color.black.ignoresSafeArea()
             if !playbackFailed {
-                VideoSurface(player: controller.player)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .clipped()
-                    .ignoresSafeArea()
+                Group {
+                    if controller.usesMPV { MPVVideoSurface(session: controller.mpv) }
+                    else { VideoSurface(player: controller.player) }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .clipped()
+                .ignoresSafeArea()
             }
             if model.settings.danmakuEnabled {
                 DanmakuOverlay(
@@ -56,7 +69,7 @@ struct PlayerScreen: View {
                 .ignoresSafeArea()
                 .allowsHitTesting(false)
             }
-            if mediaURL == nil || playbackFailed {
+            if mediaURL == nil || playbackFailed || preparing {
                 VStack(spacing: 16) {
                     if preparing {
                         ProgressView().controlSize(.large)
@@ -70,7 +83,7 @@ struct PlayerScreen: View {
                     if !preparing {
                         HStack {
                             Button("重新尝试") {
-                                Task { await prepare() }
+                                retry()
                             }
                             .buttonStyle(.borderedProminent)
                             Button("打开片源网页") { showWebPlayer = true }
@@ -80,6 +93,9 @@ struct PlayerScreen: View {
                 }
                 .padding(32)
                 .frame(maxWidth: 480)
+            }
+            if buffering && !preparing && !playbackFailed {
+                ProgressView("正在缓冲").padding(16).background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
             }
             if showControls {
                 VStack {
@@ -97,17 +113,21 @@ struct PlayerScreen: View {
         .focusEffectDisabled()
         .onAppear {
             bind()
+            resumePosition = request.startPosition ?? savedProgress?.position
             playerFocused = true
             bumpControls()
         }
         .onDisappear {
             remember()
+            preparationToken = UUID()
+            resolver.cancel()
             controller.stop()
         }
-        .task {
+        .task(id: reloadToken) {
             bind()
             await prepare()
         }
+        .task { await loadDanmaku() }
         .onContinuousHover { phase in
             if case .active = phase { bumpControls() }
         }
@@ -170,6 +190,7 @@ struct PlayerScreen: View {
                 .buttonStyle(ContentButtonStyle())
                 .help("下载")
                 .accessibilityLabel("下载当前视频")
+                .disabled(mediaURL == nil || preparing)
                 Button {
                     showCast = true
                 } label: {
@@ -282,8 +303,20 @@ struct PlayerScreen: View {
                 Text("\(clock(time)) / \(clock(duration))")
                     .font(.caption.monospacedDigit())
                 Spacer(minLength: 8)
+                if let context = request.context, context.roads.count > 1 {
+                    Menu(context.roadName.isEmpty ? "播放线路" : context.roadName) {
+                        ForEach(context.roads) { road in
+                            Button { switchRoad(road) } label: {
+                                if road.name == context.roadName { Label(road.name, systemImage: "checkmark") }
+                                else { Text(road.name) }
+                            }
+                            .disabled(context.episode(on: road, replacing: request.pageURL) == nil)
+                        }
+                    }
+                    .help("切换当前集的播放线路")
+                }
                 if candidates.count > 1 {
-                    Menu("线路") {
+                    Menu("视频地址") {
                         ForEach(candidates, id: \.absoluteString) { url in
                             Button(url.lastPathComponent) { play(url) }
                         }
@@ -293,7 +326,7 @@ struct PlayerScreen: View {
                     ForEach([0.5, 0.75, 1.0, 1.25, 1.5, 2.0], id: \.self) { rate in
                         Button(String(format: "%.2g×", rate)) {
                             model.updateSettings { $0.playbackRate = rate }
-                            if playing { controller.player.playImmediately(atRate: Float(rate)) }
+                            if playing { controller.play(rate: rate) }
                         }
                     }
                 }
@@ -304,7 +337,14 @@ struct PlayerScreen: View {
                         }
                     }
                 }
-                Text(status).font(.caption).lineLimit(1).frame(maxWidth: 180, alignment: .trailing)
+                Image(systemName: volume == 0 ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                Slider(value: $volume, in: 0...1).frame(width: 72)
+                    .accessibilityLabel("音量")
+                    .onChange(of: volume) { _, value in controller.setVolume(value) }
+                Button { NSApp.keyWindow?.toggleFullScreen(nil) } label: {
+                    Image(systemName: "arrow.up.left.and.arrow.down.right").frame(width: 36, height: 36)
+                }.buttonStyle(ContentButtonStyle()).help("全屏").accessibilityLabel("全屏")
+                Text(status).font(.caption).lineLimit(1).frame(maxWidth: 150, alignment: .trailing)
             }
         }
         .padding(14)
@@ -338,44 +378,68 @@ struct PlayerScreen: View {
             get: { time },
             set: { value in
                 time = value
-                controller.player.seek(
-                    to: CMTime(seconds: value, preferredTimescale: 600), toleranceBefore: .zero,
-                    toleranceAfter: .zero)
+                controller.seek(value)
             })
     }
 
     private func bind() {
         controller.onFailure = { message in
-            status = message
-            playbackFailed = true
+            guard model.nowPlaying?.identity == request.identity else { return }
+            lastPlaybackError = message
             playing = false
+            preparing = false
+            buffering = false
             showControls = true
+            if let mediaURL, let index = candidates.firstIndex(of: mediaURL), candidates.indices.contains(index + 1) {
+                play(candidates[index + 1])
+            } else if !sniffAttempted, !MediaSniffer.isDirect(URL(string: request.pageURL) ?? URL(fileURLWithPath: "/")) {
+                preferWebSniff = true
+                reloadToken = UUID()
+            } else {
+                status = message
+                playbackFailed = true
+            }
+        }
+        controller.onReady = {
+            preparing = false
+            status = "播放中"
+            controller.setVolume(volume)
+            if !didSeek {
+                didSeek = true
+                if let saved = resumePosition,
+                   let start = PlaybackResume.position(saved: saved, savedDuration: savedProgress?.duration ?? 0, mediaDuration: controller.mediaDuration) {
+                    controller.seek(start) { finished in
+                        Task { @MainActor in
+                            guard finished, model.nowPlaying?.identity == request.identity else { return }
+                            controller.play(rate: model.settings.playbackRate)
+                        }
+                    }
+                    return
+                }
+            }
+            controller.play(rate: model.settings.playbackRate)
+        }
+        controller.onCompleted = {
+            guard !didAutoAdvance else { return }
+            didAutoAdvance = true
+            remember()
+            Task { playNext() }
         }
         controller.onTick = { current, length in
+            guard model.nowPlaying?.identity == request.identity else { return }
             time = current
             duration = length
-            playing = controller.player.rate > 0.01
+            playing = controller.isPlaying
             if !playing { showControls = true }
-            if !didSeek, length > 1, let record = savedProgress,
-                let start = PlaybackResume.position(
-                    saved: record.position, savedDuration: record.duration, mediaDuration: length)
-            {
-                didSeek = true
-                controller.player.seek(to: CMTime(seconds: start, preferredTimescale: 600))
-            }
-            if !didAutoAdvance, length > 1, current >= length - 0.8, nextEpisode != nil {
-                didAutoAdvance = true
-                Task { playNext() }
-            }
+            buffering = controller.isBuffering && !preparing
+            if playing { status = "播放中" }
+            else if buffering { status = "正在缓冲" }
+            else if controller.isReady { status = "已暂停" }
             if Date().timeIntervalSince(lastSaved) > 5 {
                 lastSaved = Date()
                 remember()
             }
-            if controller.player.currentItem?.status == .failed {
-                status = controller.player.currentItem?.error?.localizedDescription ?? "无法播放"
-                playbackFailed = true
-                showControls = true
-            }
+
         }
     }
 
@@ -412,102 +476,127 @@ struct PlayerScreen: View {
         Task {
             try? await Task.sleep(nanoseconds: 3_000_000_000)
             guard token == controlsToken, playing,
-                controller.player.currentItem?.status == .readyToPlay,
+                controller.isReady,
                 !playbackFailed, !showDanmakuSettings else { return }
             showControls = false
         }
     }
 
+    private func retry() {
+        if time > 1 { resumePosition = time }
+        preferWebSniff = false
+        sniffAttempted = false
+        lastPlaybackError = nil
+        reloadToken = UUID()
+    }
+
     private func prepare() async {
-        controller.player.pause()
+        let token = UUID()
+        preparationToken = token
+        resolver.cancel()
+        controller.resetItem()
         mediaURL = nil
         candidates = []
         preparing = true
+        playing = false
+        buffering = false
         playbackFailed = false
-        mediaReferer = ""
+        mediaReferer = request.referer
         mediaCookies = ""
-        defer { preparing = false }
-        await loadDanmaku()
-        guard !Task.isCancelled else { return }
-        guard let page = URL(string: request.pageURL) else {
+        didSeek = false
+        didAutoAdvance = false
+        time = 0
+        duration = 0
+        guard let page = URL(string: request.pageURL), ["http", "https", "file"].contains(page.scheme ?? "") else {
             status = "播放地址无效"
+            preparing = false
             return
         }
-        if MediaSniffer.isDirect(page) {
+        if page.isFileURL || MediaSniffer.isDirect(page) {
             candidates = [page]
             play(page)
             return
         }
-        status = "正在从页面查找视频地址"
-        do {
-            let client = HTTPClient()
-            let response = try await client.get(
-                request.pageURL,
-                headers: [
-                    "User-Agent": request.userAgent,
-                    "Referer": request.referer,
-                ])
-            guard !Task.isCancelled else { return }
-            var found = MediaSniffer.mediaURLs(in: response.text, baseURL: response.url)
-            mediaReferer = response.url.absoluteString
-            if let resolved = try await model.resolveDirectPlayback(
-                page: response.url, html: response.text, userAgent: request.userAgent)
-            {
-                found = [resolved]
-            }
-            if found.isEmpty {
-                status = "正在用网页嗅探视频地址"
-                let legacy =
-                    model.rules.first {
-                        $0.plugin.baseURL == request.referer || request.pageURL.hasPrefix($0.plugin.baseURL)
-                    }?.plugin.useLegacyParser ?? false
-                if let sniffed = await PageSniffer.find(
-                    url: page, userAgent: request.userAgent, referer: request.referer, legacy: legacy)
-                {
-                    found = [sniffed.url]
-                    mediaReferer = sniffed.referer
-                    mediaCookies = sniffed.cookieHeader
+        status = "正在解析片源"
+        var found: [URL] = []
+        var pageError: String?
+        if !preferWebSniff {
+            do {
+                var headers = request.context.map { model.verificationHeaders(ruleName: $0.ruleName) } ?? [:]
+                headers["User-Agent"] = request.userAgent
+                headers["Referer"] = request.referer
+                let response = try await model.playbackHTTP.get(request.pageURL, headers: headers)
+                guard preparationToken == token, !Task.isCancelled else { return }
+                if MediaSniffer.isMediaResponse(url: response.url, mimeType: response.headers.first(where: { $0.key.lowercased() == "content-type" })?.value ?? "", text: response.text) {
+                    found = [response.url]
+                } else {
+                    found = MediaSniffer.mediaURLs(in: response.text, baseURL: response.url)
+                    do {
+                        if let resolved = try await model.resolveDirectPlayback(page: response.url, html: response.text, userAgent: request.userAgent, context: request.context) {
+                            found = [resolved]
+                        }
+                    } catch { pageError = describe(error) }
                 }
+                guard preparationToken == token, !Task.isCancelled else { return }
+                let rule = model.rules.first { $0.plugin.name == request.context?.ruleName }?.plugin
+                mediaReferer = rule?.referer.isEmpty == false ? rule!.referer : response.url.absoluteString
+            } catch {
+                guard preparationToken == token, !Task.isCancelled else { return }
+                pageError = describe(error)
             }
-            guard !Task.isCancelled else { return }
-            candidates = found
-            if let first = found.first {
-                play(first)
-            } else {
-                status = "没有找到可直接播放的地址"
+        }
+        if found.isEmpty {
+            status = "正在从网页读取视频"
+            sniffAttempted = true
+            let rule = model.rules.first {
+                $0.plugin.name == request.context?.ruleName || URL(string: $0.plugin.baseURL)?.host == page.host
+            }?.plugin
+            if let sniffed = await resolver.find(url: page, userAgent: request.userAgent, referer: request.referer, legacy: rule?.useLegacyParser ?? false) {
+                found = [sniffed.url]
+                mediaReferer = rule?.referer.isEmpty == false ? rule!.referer : sniffed.referer
+                mediaCookies = sniffed.cookieHeader
             }
-        } catch {
-            status = describe(error)
+        }
+        guard preparationToken == token, !Task.isCancelled else { return }
+        candidates = found
+        if let first = found.first {
+            play(first)
+        } else {
+            preparing = false
+            playbackFailed = true
+            status = (pageError ?? lastPlaybackError).map { "片源无法播放：\($0)" } ?? "没有找到视频，请切换播放线路或打开片源网页"
         }
     }
 
     private func play(_ url: URL) {
         playbackFailed = false
+        preparing = true
+        playing = false
+        didSeek = false
         mediaURL = url
-        status = url.lastPathComponent
+        status = "正在加载视频"
         var headers = [
             "User-Agent": request.userAgent,
             "Referer": mediaReferer.isEmpty ? request.referer : mediaReferer,
         ]
         if !mediaCookies.isEmpty { headers["Cookie"] = mediaCookies }
         controller.load(url: url, headers: headers, sharpen: model.settings.superResolution)
-        controller.player.playImmediately(atRate: Float(model.settings.playbackRate))
-        playing = true
+        controller.setVolume(volume)
     }
 
     private func toggle() {
-        if controller.player.rate > 0.01 {
-            controller.player.pause()
+        if controller.isPlaying {
+            controller.pause()
             playing = false
         } else {
-            controller.player.playImmediately(atRate: Float(model.settings.playbackRate))
+            controller.play(rate: model.settings.playbackRate)
             playing = true
         }
     }
 
     private func seek(by delta: Double) {
         let target = min(max(0, time + delta), duration > 0 ? duration : time + delta)
-        controller.player.seek(to: CMTime(seconds: target, preferredTimescale: 600))
+        controller.seek(target)
     }
 
     private func playNext() {
@@ -516,15 +605,31 @@ struct PlayerScreen: View {
     }
 
     private func switchTo(_ episode: EpisodeEntry) {
+        guard episode.url != request.pageURL else { return }
         remember()
         var next = request
         next.episodeName = episode.name
         next.pageURL = episode.url
+        next.startPosition = nil
+        model.play(next)
+    }
+
+    private func switchRoad(_ road: PlaybackRoad) {
+        guard var context = request.context, road.name != context.roadName,
+              let episode = context.episode(on: road, replacing: request.pageURL) else { return }
+        remember()
+        context.roadName = road.name
+        var next = request
+        next.context = context
+        next.episodes = road.episodes
+        next.episodeName = episode.name
+        next.pageURL = episode.url
+        next.startPosition = time > 1 ? time : resumePosition
         model.play(next)
     }
 
     private func remember() {
-        guard duration > 0 || time > 0 else { return }
+        guard time > 1, time.isFinite, duration.isFinite else { return }
         model.remember(request: request, position: time, duration: duration)
     }
 
@@ -551,6 +656,7 @@ struct PlayerScreen: View {
                 return
             }
             let loaded = try await client.comments(episodeID: episode.id)
+            guard !Task.isCancelled else { return }
             comments = DanmakuMatching.mergeDuplicates(loaded)
             danmakuNote = "\(comments.count) 条弹幕"
         } catch {
@@ -587,56 +693,137 @@ struct VideoSurface: NSViewRepresentable {
 @MainActor
 final class PlaybackController {
     let player = AVPlayer()
+    let mpv = MPVPlaybackSession()
+    var usesMPV: Bool { mpv.handle != nil }
+    var isPlaying: Bool { usesMPV ? mpv.snapshot.loaded != 0 && mpv.snapshot.paused == 0 : player.rate > 0.01 }
+    var isBuffering: Bool { usesMPV ? mpv.snapshot.buffering != 0 : player.timeControlStatus == .waitingToPlayAtSpecifiedRate }
+    var isReady: Bool { usesMPV ? mpv.snapshot.loaded != 0 : player.currentItem?.status == .readyToPlay }
+    var mediaDuration: Double { usesMPV ? mpv.snapshot.duration : player.currentItem?.duration.seconds ?? 0 }
+    private var readyReported = false
+    private var endReported = false
     var onTick: ((Double, Double) -> Void)?
     var onFailure: ((String) -> Void)?
+    var onReady: (() -> Void)?
+    var onCompleted: (() -> Void)?
     private var observer: Any?
     private var statusObserver: NSKeyValueObservation?
+    private var endObserver: NSObjectProtocol?
+    private var timeoutTask: Task<Void, Never>?
+    private var itemToken = UUID()
+    private var failureReported = false
 
     func load(url: URL, headers: [String: String], sharpen: Int = SuperResolutionMode.off.rawValue) {
+        resetItem()
+        let token = itemToken
+        if usesMPV {
+            mpv.onSnapshot = { [weak self] snapshot in
+                guard let self, self.itemToken == token else { return }
+                if snapshot.error < 0 {
+                    self.fail(String(cString: kn_error_string(snapshot.error)), token: token)
+                    return
+                }
+                if snapshot.loaded != 0 {
+                    if !self.readyReported { self.readyReported = true; self.timeoutTask?.cancel(); self.onReady?() }
+                    self.onTick?(max(0, snapshot.position), max(0, snapshot.duration))
+                    if snapshot.completed != 0, !self.endReported {
+                        self.endReported = true
+                        self.onCompleted?()
+                    }
+                }
+            }
+            let result = mpv.load(url: url, headers: headers)
+            if result < 0 { fail(String(cString: kn_error_string(result)), token: token); return }
+            timeoutTask = Task { [weak self] in
+                do { try await Task.sleep(for: .seconds(30)) } catch { return }
+                guard let self, self.itemToken == token, !self.isReady else { return }
+                self.fail("视频加载超时，请重试或切换播放线路。", token: token)
+            }
+            return
+        }
         let asset = AVURLAsset(url: url, options: ["AVURLAssetHTTPHeaderFieldsKey": headers])
         let item = AVPlayerItem(asset: asset)
         if sharpen != SuperResolutionMode.off.rawValue {
-            item.videoComposition = VideoSharpen.composition(
-                for: asset, strong: sharpen == SuperResolutionMode.quality.rawValue)
-        }
-        statusObserver?.invalidate()
-        // Failed items may never emit a periodic time tick. Observe the item itself.
-        statusObserver = item.observe(\.status, options: [.initial, .new]) { [weak self] item, _ in
-            Task { @MainActor [weak self, weak item] in
-                guard let self, let item, self.player.currentItem === item, item.status == .failed else { return }
-                self.player.pause()
-                self.onFailure?(item.error?.localizedDescription ?? "当前视频无法播放，请重试或选择其他线路。")
-            }
+            item.videoComposition = VideoSharpen.composition(for: asset, strong: sharpen == SuperResolutionMode.quality.rawValue)
         }
         player.replaceCurrentItem(with: item)
+        statusObserver = item.observe(\.status, options: [.initial, .new]) { [weak self] item, _ in
+            Task { @MainActor [weak self, weak item] in
+                guard let self, let item, self.itemToken == token, self.player.currentItem === item else { return }
+                if item.status == .readyToPlay {
+                    self.timeoutTask?.cancel()
+                    self.timeoutTask = nil
+                    self.onReady?()
+                } else if item.status == .failed {
+                    self.fail(item.error?.localizedDescription ?? "当前视频无法播放，请重试或切换线路。", token: token)
+                }
+            }
+        }
+        endObserver = NotificationCenter.default.addObserver(forName: AVPlayerItem.didPlayToEndTimeNotification, object: item, queue: .main) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self, self.itemToken == token else { return }
+                self.onCompleted?()
+            }
+        }
+        timeoutTask = Task { [weak self] in
+            do { try await Task.sleep(for: .seconds(30)) } catch { return }
+            guard let self, self.itemToken == token, self.player.currentItem?.status != .readyToPlay else { return }
+            self.fail("视频加载超时，请重试或切换播放线路。", token: token)
+        }
         guard observer == nil else { return }
-        let interval = CMTime(seconds: 0.25, preferredTimescale: 600)
-        // The observer closure is @Sendable. The player is main-actor isolated, and this queue is .main.
-        observer = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) {
-            [weak self] time in
+        observer = player.addPeriodicTimeObserver(forInterval: CMTime(seconds: 0.25, preferredTimescale: 600), queue: .main) { [weak self] time in
             let seconds = time.seconds
             MainActor.assumeIsolated {
-                self?.handleTick(seconds)
+                guard let self, self.player.currentItem != nil else { return }
+                let length = self.player.currentItem?.duration.seconds ?? 0
+                self.onTick?(seconds.isFinite ? seconds : 0, length.isFinite ? length : 0)
             }
         }
     }
 
-    private func handleTick(_ seconds: Double) {
-        let length = player.currentItem?.duration.seconds ?? 0
-        onTick?(seconds.isFinite ? seconds : 0, length.isFinite ? length : 0)
+    func pause() { if usesMPV { mpv.pause() } else { player.pause() } }
+    func play(rate: Double) { if usesMPV { mpv.play(rate: rate) } else { player.playImmediately(atRate: Float(rate)) } }
+    func setVolume(_ value: Double) { if usesMPV { mpv.volume(value) } else { player.volume = Float(value) } }
+    func seek(_ seconds: Double, completion: ((Bool) -> Void)? = nil) {
+        if usesMPV { mpv.seek(seconds); completion?(true) }
+        else { player.seek(to: CMTime(seconds: seconds, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero) { finished in
+            Task { @MainActor in completion?(finished) }
+        } }
+    }
+
+    private func fail(_ message: String, token: UUID) {
+        guard itemToken == token, !failureReported else { return }
+        failureReported = true
+        timeoutTask?.cancel()
+        timeoutTask = nil
+        pause()
+        onFailure?(message)
+    }
+
+    func resetItem() {
+        itemToken = UUID()
+        failureReported = false
+        readyReported = false
+        endReported = false
+        mpv.onSnapshot = nil
+        mpv.stop()
+        timeoutTask?.cancel()
+        timeoutTask = nil
+        statusObserver?.invalidate()
+        statusObserver = nil
+        if let endObserver { NotificationCenter.default.removeObserver(endObserver) }
+        endObserver = nil
+        player.pause()
+        player.replaceCurrentItem(with: nil)
     }
 
     func stop() {
-        statusObserver?.invalidate()
-        statusObserver = nil
-        onFailure = nil
-        player.pause()
-        if let observer {
-            player.removeTimeObserver(observer)
-            self.observer = nil
-        }
+        resetItem()
+        if let observer { player.removeTimeObserver(observer) }
+        observer = nil
         onTick = nil
-        player.replaceCurrentItem(with: nil)
+        onFailure = nil
+        onReady = nil
+        onCompleted = nil
     }
 }
 
@@ -756,8 +943,8 @@ extension PlayerScreen {
                         room.disconnect()
                     } else {
                         room.onState = { position, paused, _ in
-                            controller.player.seek(to: CMTime(seconds: position, preferredTimescale: 600))
-                            if paused { controller.player.pause() } else { controller.player.play() }
+                            controller.seek(position)
+                            if paused { controller.pause() } else { controller.play(rate: model.settings.playbackRate) }
                         }
                         room.connect(
                             host: model.settings.syncplayHost,

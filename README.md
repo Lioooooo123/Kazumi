@@ -1,10 +1,10 @@
 # 小栗子
 
-小栗子是 [Kazumi](https://github.com/Predidit/Kazumi) 的原生 macOS 客户端。界面沿用原项目的信息架构和绿色卡片风格，交互使用 Mac 上的 `NavigationSplitView`、工具栏和 AVKit 播放器。
+小栗子是 [Kazumi](https://github.com/Predidit/Kazumi) 的原生 macOS 客户端。界面沿用原项目的信息架构和绿色卡片风格，交互使用 Mac 上的 `NavigationSplitView`、工具栏和原生播放控件，视频使用与上游相同的 libmpv 内核。
 
 本仓库现在只包含这个 macOS 应用。Finder、程序坞和菜单栏显示名是 **小栗子**。Xcode 目标、scheme 和产品名是 `XiaoLizi`，bundle id 是 `app.xiaolizi.macos`。规则格式、`kazumi://` 和官方 KazumiRules 仓库仍沿用上游名称。核心库模块名仍是 `KazumiCore`。
 
-目标系统是 **macOS 14+**，需要 **Xcode 16+**。播放、弹幕层和窗口使用 SwiftUI / AppKit / AVKit，需要在 Mac 上编译。规则解析、Bangumi 数据模型和本地资料库放在 `KazumiCore` 里，可以在 Linux 上用 Swift 工具链做单元测试。
+目标系统是 **macOS 14+**，需要 **Xcode 16+**。播放、弹幕层和窗口使用 SwiftUI / AppKit / libmpv（AVKit 回退），需要在 Mac 上编译。规则解析、Bangumi 数据模型和本地资料库放在 `KazumiCore` 里，可以在 Linux 上用 Swift 工具链做单元测试。
 
 本项目采用 **GPL-3.0-or-later**，与 Kazumi 相同。许可证全文见 [LICENSE](LICENSE)。小栗子基于 Kazumi 及其贡献者的作品；版权行和关于页保留这一署名。
 
@@ -15,6 +15,7 @@
 ├── XiaoLizi.xcodeproj        Xcode 工程，scheme 为 XiaoLizi
 ├── Package.swift             本地 Swift 包
 ├── Sources/KazumiCore/       可在 Linux 编译的核心
+├── Sources/MPVBridge/        libmpv 的 C 接口桥接
 ├── Tests/KazumiCoreTests/    单元测试
 ├── docs/                     架构和贡献说明
 ├── scripts/                  测试和 macOS 构建脚本
@@ -49,7 +50,7 @@
 | 规则 | 仓库安装和更新，导入 JSON、链接、剪贴板或文件，启用、删除 |
 | 设置入口 | 独立设置窗口：外观、播放、弹幕、下载、同步、代理、一起看 |
 
-详情页展示封面、评分、标签和简介，并可以用中文名去已启用的规则里找片源。分集页解析线路后进入播放器。播放器盖住整个窗口，用 `AVPlayerView` 播 HLS / MP4，上面叠一层滚动、顶部和底部弹幕。
+详情页展示封面、评分、标签和简介，并可以用中文名去已启用的规则里找片源。分集页解析线路后进入播放器。播放器盖住整个窗口，用 libmpv 播放，未打包媒体框架的开发构建使用 `AVPlayerView` 回退，上面叠一层滚动、顶部和底部弹幕。
 
 默认强调色沿用上游绿色 `#4CAF50`，用于选择和主要操作。封面比例约 0.65，标题位于图片外；内容区使用 macOS 系统中性色。侧栏、工具栏和设置表单使用系统控件；设置由 `⌘,` 打开独立窗口，按外观、播放、同步、网络和关于分类。字体用系统字体（中文是苹方）。图标放在 `App/Assets.xcassets`，由 Yuquanaaa 创作，授权范围与上游项目说明一致。
 
@@ -70,6 +71,14 @@ scripts/build-macos.sh
 ```
 
 `scripts/ci.sh` 会先跑测试，再调用 `xcodebuild`。GitHub Actions 在 `macos-latest` 上执行同一脚本。
+
+可直接运行的完整播放包使用：
+
+```bash
+scripts/package-macos.sh
+```
+
+输出为 `build/XiaoLizi.app`，包含 Kazumi 使用的 libmpv/FFmpeg 媒体框架，界面和业务逻辑均为 Swift，不携带 Flutter 运行时。默认从 `/Applications/Kazumi.app/Contents/Frameworks` 读取已安装的官方媒体运行时；其他位置可通过 `MPV_FRAMEWORKS_DIR` 指定。框架未包含在源码仓库中。
 
 应用沙盒打开了出站网络，以及用户选择文件的读写和书签权限。`Info.plist` 允许任意 HTTP 加载，因为有的规则站点仍然是 http。菜单栏名称和关于面板来自 `CFBundleName` / `CFBundleDisplayName`（小栗子）。
 
@@ -93,14 +102,14 @@ scripts/build-macos.sh
 | API 规则（嵌套、分隔符、播放页模板） | 有 |
 | 规则编辑器 | 有基础表单：名称、版本、作者、网址、搜索和分集选择器。完整 API 模板仍用 JSON |
 | 验证码 / WebView | 有。验证页用 WKWebView 打开，完成后把 Cookie 带到下一次搜索。自动点按钮和自定义脚本没有移植 |
-| 内置播放器 | AVPlayer，直链和页面里的 m3u8/mp4 |
+| 内置播放器 | 与上游相同的 libmpv；支持直链和网页嗅探。未包含媒体框架的开发构建回退到 AVPlayer |
 | 网页嗅探 | 有。页面里找不到直链时用 WKWebView 收集 video / iframe / 资源地址，并丢掉广告域名。强混淆脚本仍可能拿不到地址 |
 | 弹幕 | 有。按标题匹配作品、按集数匹配分集；滚动弹幕按文字宽度避让。凭据在设置里 |
-| 倍速、续播、下一集 | 有。推荐页有「继续观看」，播完自动下一集，开头 1 秒和结尾 5 秒不续播 |
+| 倍速、续播、下一集 | 有。保留完整线路和选集；换线保留位置，媒体实际结束后自动下一集。开头 1 秒和结尾 5 秒不续播 |
 | 追番、历史 | 有，本机 JSON。历史可搜索、只看未看完、删除；追番可搜索和取消 |
 | 外观 | 深色、种子色、OLED 纯黑背景。动态取色没有做，使用固定种子色 |
 | 下载、外部播放器 | 有。mp4 直接保存，m3u8 分片拼成一个文件；可交给 IINA、VLC 或浏览器。没有多集队列调度 |
-| 超分辨率 | 播放时可用 Core Image 锐化，分效率和质量两档。完整 Anime4K 需要单独的 Metal 渲染器，这里没有移植 |
+| 超分辨率 | AVKit 回退提供 Core Image 锐化。libmpv 的 Anime4K 着色器尚未接入 |
 | 一起看、DLNA | 有基础能力。一起看走 Syncplay 的 Hello / State JSON，默认 `syncplay.pl:8996`。DLNA 发 SSDP 搜索并用 SOAP 设置地址后播放。房间事件和设备兼容性都不完整 |
 | WebDAV / Bangumi 同步 | WebDAV 同步历史、追番和弹幕屏蔽词。屏蔽词文档与上游 version 1 格式相同。历史写在 `/kazumiSync/history/macos-library.json`。Bangumi 收藏可在填写令牌后标为在看 |
 | 评论、角色、Staff | 有 |
@@ -109,10 +118,6 @@ scripts/build-macos.sh
 
 ## 验证
 
-在一台 Mac 上用 **Xcode 27.0 / Swift 6.4 / macOS 27.2** 编译运行过早期外壳（当时目标名还是 `KazumiMac`）。修正两处编译错误后可以启动：使用 `KazumiCore` 类型的文件需要自己 `import KazumiCore`；`ContentUnavailableView` 的 `description` 必须是 `Text`。
+`swift test` 验证规则解析、片源签名响应、历史兼容与分集等核心契约；`scripts/build-macos.sh` 验证 SwiftUI 应用编译；`scripts/package-macos.sh` 生成带媒体框架的应用。真实片源的出画面、切集、换线、自动连播、重启续播需要单独在应用中检查，不能用编译或夹具测试代替。
 
-在 **Xcode 27 / macOS 27.2** 上，当前这棵树 `BUILD SUCCEEDED`，`swift test` 37 个测试通过，`XiaoLizi.app` 可以启动。编译前修了三处：`@Observable` 的 `init` 不能在全部存储属性就绪前改 `settings`；DLNA 的 `describe` 不能和错误描述函数同名；macOS 上 `KazumiCore` 需要链接 `libiconv`。GitHub Actions 的 macOS 作业执行 `scripts/ci.sh`，会编应用并跑这组测试。
-
-核心库在 Linux（Ubuntu 24.04，Swift 6.2）上同样是 37 个测试通过，并用 `-swift-version 6` 和 `-strict-concurrency=complete` 编译通过。
-
-还没有在本机点过：启动之后的页面、AVKit 实际播放、弹幕是否跟着进度走，以及真实 Bangumi / 弹弹play / 规则站点。
+验收构建可以通过环境变量 `XIAOLIZI_DATA_DIRECTORY` 使用独立资料目录，避免与另一份应用的规则和历史互相覆盖。它不会更改默认资料目录。

@@ -54,6 +54,7 @@ struct RootView: View {
         }
         .background(KazumiTheme.canvas(scheme, oled: model.settings.oled))
         .navigationSplitViewStyle(.balanced)
+        .toolbar(model.nowPlaying == nil ? .visible : .hidden, for: .windowToolbar)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button("搜索", systemImage: "magnifyingglass") { model.sidebar = .search }
@@ -115,7 +116,7 @@ struct RootView: View {
             if let request = model.nowPlaying {
                 GeometryReader { geometry in
                     PlayerScreen(request: request)
-                        .id(request.pageURL)
+                        .id(request.identity)
                         .frame(width: geometry.size.width, height: geometry.size.height)
                 }
             }

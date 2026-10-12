@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		BF0000000000000000000001 /* KazumiCore in Frameworks */ = {isa = PBXBuildFile; productRef = P10000000000000000000001 /* KazumiCore */; };
+		BF0000000000000000000002 /* MPVBridge in Frameworks */ = {isa = PBXBuildFile; productRef = P10000000000000000000002 /* MPVBridge */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -46,6 +47,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				BF0000000000000000000001 /* KazumiCore in Frameworks */,
+                BF0000000000000000000002 /* MPVBridge in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -81,6 +83,7 @@
 			name = XiaoLizi;
 			packageProductDependencies = (
 				P10000000000000000000001 /* KazumiCore */,
+                P10000000000000000000002 /* MPVBridge */,
 			);
 			productName = XiaoLizi;
 			productReference = A10000000000000000000001 /* XiaoLizi.app */;
@@ -273,6 +276,11 @@
 			package = R10000000000000000000001 /* XCLocalSwiftPackageReference "." */;
 			productName = KazumiCore;
 		};
+        P10000000000000000000002 /* MPVBridge */ = {
+            isa = XCSwiftPackageProductDependency;
+            package = R10000000000000000000001 /* XCLocalSwiftPackageReference "." */;
+            productName = MPVBridge;
+        };
 /* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = G10000000000000000000001 /* Project object */;

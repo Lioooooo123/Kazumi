@@ -196,9 +196,9 @@ public struct RuleService: Sendable {
         return parsed.items
     }
 
-    public func chapters(rule: PluginRule, source: String) async throws -> [PlaybackRoad] {
+    public func chapters(rule: PluginRule, source: String, extraHeaders: [String: String] = [:]) async throws -> [PlaybackRoad] {
         let request = try engine.prepareChapters(rule: rule, source: source)
-        let response = try await http.send(request, userAgent: agent(rule), referer: referer(rule))
+        let response = try await http.send(request, userAgent: agent(rule), referer: referer(rule), extraHeaders: extraHeaders)
         let parsed = try engine.parseChapters(rule: rule, raw: response.text, source: source)
         if parsed.roads.isEmpty {
             throw KazumiError.message("\(rule.name) 没有解析到播放线路")

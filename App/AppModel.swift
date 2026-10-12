@@ -43,6 +43,9 @@ struct PlaybackRequest: Hashable {
     var referer: String
     var userAgent: String
     var episodes: [EpisodeEntry]
+    var context: PlaybackContext? = nil
+    var startPosition: Double? = nil
+    var identity: String { pageURL + "|" + (context?.ruleName ?? "") + "|" + (context?.roadName ?? "") }
 }
 
 enum AppRoute: Hashable {
@@ -118,6 +121,9 @@ final class AppModel {
     private var searchToken = UUID()
     private var timelineToken = UUID()
     private var catalogToken = UUID()
+    private var sourceToken = UUID()
+    private var historyToken = UUID()
+    var restoringHistoryID: String?
 
     init() {
         let directory = AppPaths.support
@@ -187,6 +193,8 @@ final class AppModel {
     var enabledRules: [InstalledRule] { rules.filter(\.enabled) }
 
     func play(_ request: PlaybackRequest) {
+        historyToken = UUID()
+        restoringHistoryID = nil
         nowPlaying = request
     }
 
@@ -462,27 +470,41 @@ final class AppModel {
         searchToken = token
         searching = true
         searchError = nil
+        searchBangumi = []
+        searchGroups = []
         defer { if searchToken == token { searching = false } }
-        async let catalog = bangumi.search(keyword: keyword, limit: 24)
-        let groups = await searchRules(keyword)
-        guard searchToken == token else { return }
+        async let sources: Void = searchRuleResults(keyword, token: token)
         do {
-            let found = try await catalog
+            let found = try await bangumi.search(keyword: keyword, limit: 24)
+            guard searchToken == token, !Task.isCancelled else { return }
             searchBangumi = found
             for item in found { subjects[item.id] = item }
             warm(Array(found.prefix(24)))
         } catch {
+            guard searchToken == token, !Task.isCancelled else { return }
             searchBangumi = []
             searchError = describe(error)
         }
-        searchGroups = groups
+        await sources
+    }
+
+    private func searchRuleResults(_ keyword: String, token: UUID) async {
+        _ = await searchRules(keyword) { groups in
+            guard self.searchToken == token, !Task.isCancelled else { return }
+            self.searchGroups = groups
+        }
     }
 
     func findSources(for subject: BangumiSubject) async {
+        let token = UUID()
+        sourceToken = token
         sourceLoading = true
-        defer { sourceLoading = false }
-        let groups = await searchRules(subject.displayName)
-        sourceGroups[subject.id] = groups
+        sourceGroups[subject.id] = []
+        defer { if sourceToken == token { sourceLoading = false } }
+        _ = await searchRules(subject.displayName) { groups in
+            guard self.sourceToken == token, !Task.isCancelled else { return }
+            self.sourceGroups[subject.id] = groups
+        }
     }
 
     func chapters(for route: EpisodeRoute) async throws -> [PlaybackRoad] {
@@ -490,20 +512,26 @@ final class AppModel {
             throw KazumiError.message("找不到规则 \(route.ruleName)")
         }
         let service = ruleService
-        return try await Task.detached(priority: .userInitiated) {
-            try await service.chapters(rule: rule, source: route.source)
-        }.value
+        return try await service.chapters(rule: rule, source: route.source, extraHeaders: verificationHeaders(ruleName: rule.name))
     }
 
-    func resolveDirectPlayback(page: URL, html: String, userAgent: String) async throws -> URL? {
+    var playbackHTTP: HTTPClient { ruleService.http }
+
+    func verificationHeaders(ruleName: String) -> [String: String] {
+        guard let cookies = ruleCookies[ruleName], !cookies.isEmpty else { return [:] }
+        return ["Cookie": cookies]
+    }
+
+    func resolveDirectPlayback(page: URL, html: String, userAgent: String, context: PlaybackContext?) async throws -> URL? {
         guard let rule = rules.first(where: { page.absoluteString.hasPrefix($0.plugin.baseURL) })?.plugin else { return nil }
         return try await XifanPlaybackService(http: ruleService.http).resolve(
-            page: page, html: html, rule: rule, userAgent: userAgent)
+            page: page, html: html, rule: rule, userAgent: userAgent,
+            selectedSourceID: context?.roads.first(where: { $0.name == context?.roadName })?.sourceID.flatMap(Int.init))
     }
 
-    func playback(ruleName: String, subject: BangumiSubject?, title: String, episode: EpisodeEntry, episodes: [EpisodeEntry]) -> PlaybackRequest {
+    func playback(ruleName: String, subject: BangumiSubject?, title: String, episode: EpisodeEntry, episodes: [EpisodeEntry], source: String = "", roadName: String = "", roads: [PlaybackRoad] = []) -> PlaybackRequest {
         let rule = rules.first { $0.plugin.name == ruleName }?.plugin
-        return PlaybackRequest(
+        var request = PlaybackRequest(
             title: title,
             subjectName: subject?.displayName ?? title,
             subjectID: subject?.id ?? 0,
@@ -514,20 +542,57 @@ final class AppModel {
             userAgent: rule?.userAgent.isEmpty == false ? (rule?.userAgent ?? "") : KazumiCore.defaultBrowserUserAgent,
             episodes: episodes
         )
+        request.context = PlaybackContext(ruleName: ruleName, source: source, roadName: roadName, roads: roads, referer: request.referer, userAgent: request.userAgent)
+        return request
     }
 
     func playback(from history: HistoryRecord) -> PlaybackRequest {
-        PlaybackRequest(
+        let context = history.playbackContext
+        let rule = rules.first { item in
+            if let context { return item.plugin.name == context.ruleName }
+            return URL(string: item.plugin.baseURL)?.host == URL(string: history.pageURL)?.host
+        }?.plugin
+        return PlaybackRequest(
             title: history.displayName,
             subjectName: history.displayName,
             subjectID: history.subjectID,
             coverURL: history.imageURL,
             episodeName: history.episodeName,
             pageURL: history.pageURL,
-            referer: history.pageURL,
-            userAgent: KazumiCore.defaultBrowserUserAgent,
-            episodes: [EpisodeEntry(name: history.episodeName, url: history.pageURL)]
+            referer: rule.map { $0.referer.isEmpty ? $0.baseURL : $0.referer } ?? context?.referer ?? history.pageURL,
+            userAgent: rule.map { $0.userAgent.isEmpty ? KazumiCore.defaultBrowserUserAgent : $0.userAgent } ?? context?.userAgent ?? KazumiCore.defaultBrowserUserAgent,
+            episodes: context?.episodes.isEmpty == false ? context!.episodes : [EpisodeEntry(name: history.episodeName, url: history.pageURL)],
+            context: context
         )
+    }
+
+    func resume(_ history: HistoryRecord) async {
+        let token = UUID()
+        historyToken = token
+        restoringHistoryID = history.id
+        defer { if historyToken == token { restoringHistoryID = nil } }
+        var request = playback(from: history)
+        if var context = request.context, !context.source.isEmpty,
+           let rule = rules.first(where: { $0.plugin.name == context.ruleName })?.plugin {
+            do {
+                let roads = try await ruleService.chapters(rule: rule, source: context.source, extraHeaders: verificationHeaders(ruleName: rule.name))
+                guard historyToken == token, !Task.isCancelled else { return }
+                let matchingRoads = roads.filter { $0.episodes.contains(where: { $0.url == history.pageURL }) }
+                guard let road = matchingRoads.first(where: { $0.name == context.roadName }) ?? matchingRoads.first else {
+                    postNotice("片源中的这一集已变更，请重新选择分集")
+                    return
+                }
+                context.roads = roads
+                context.roadName = road.name
+                request.context = context
+                request.episodes = road.episodes
+            } catch {
+                guard historyToken == token, !Task.isCancelled else { return }
+                postNotice("分集刷新失败，使用已保存的分集")
+            }
+        }
+        guard historyToken == token, !Task.isCancelled else { return }
+        play(request)
     }
 
     func remember(request: PlaybackRequest, position: Double, duration: Double) {
@@ -539,7 +604,8 @@ final class AppModel {
             episodeName: request.episodeName,
             pageURL: request.pageURL,
             position: position,
-            duration: duration
+            duration: duration,
+            playbackContext: request.context
         )
         history.removeAll { $0.pageURL == record.pageURL }
         history.insert(record, at: 0)
@@ -551,7 +617,7 @@ final class AppModel {
         DanmakuClient(appID: settings.dandanAppID, appSecret: settings.dandanAppSecret)
     }
 
-    private func searchRules(_ keyword: String) async -> [RuleSearchGroup] {
+    private func searchRules(_ keyword: String, onUpdate: ([RuleSearchGroup]) -> Void = { _ in }) async -> [RuleSearchGroup] {
         let installed = enabledRules
         let service = ruleService
         return await withTaskGroup(of: RuleSearchGroup.self) { group in
@@ -575,7 +641,12 @@ final class AppModel {
                 }
             }
             var groups: [RuleSearchGroup] = []
-            for await item in group { groups.append(item) }
+            for await item in group {
+                if Task.isCancelled { group.cancelAll(); break }
+                groups.append(item)
+                groups.sort { $0.ruleName.localizedStandardCompare($1.ruleName) == .orderedAscending }
+                onUpdate(groups)
+            }
             return groups.sorted { $0.ruleName.localizedStandardCompare($1.ruleName) == .orderedAscending }
         }
     }
@@ -773,6 +844,9 @@ final class AppModel {
 
 enum AppPaths {
     static var support: URL {
+        if let directory = ProcessInfo.processInfo.environment["XIAOLIZI_DATA_DIRECTORY"], !directory.isEmpty {
+            return URL(fileURLWithPath: directory, isDirectory: true)
+        }
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? URL(fileURLWithPath: NSTemporaryDirectory())
         return base.appendingPathComponent("XiaoLizi", isDirectory: true)
