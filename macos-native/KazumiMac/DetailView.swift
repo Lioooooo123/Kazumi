@@ -5,6 +5,7 @@ import KazumiCore
 struct DetailView: View {
     var subjectID: Int
     @Environment(AppModel.self) private var model
+    @Environment(\.colorScheme) private var scheme
 
     var body: some View {
         let subject = model.subject(id: subjectID)
@@ -39,46 +40,57 @@ struct DetailView: View {
     }
 
     private func header(_ subject: BangumiSubject) -> some View {
-        HStack(alignment: .top, spacing: 20) {
-            CoverImage(url: subject.coverURL)
-                .frame(width: 180, height: 276)
-                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            VStack(alignment: .leading, spacing: 10) {
-                Text(subject.displayName)
-                    .font(.system(size: 28, weight: .bold))
-                    .fixedSize(horizontal: false, vertical: true)
-                if subject.name != subject.displayName {
-                    Text(subject.name).foregroundStyle(.secondary)
-                }
-                HStack(spacing: 12) {
-                    if subject.score > 0 {
-                        Label(String(format: "%.1f", subject.score), systemImage: "star.fill")
+        VStack(alignment: .leading, spacing: 16) {
+            Text(subject.displayName)
+                .font(.system(size: 24, weight: .semibold))
+                .lineLimit(2)
+            HStack(alignment: .top, spacing: 16) {
+                CoverImage(url: subject.coverURL)
+                    .frame(width: 168, height: 258)
+                    .clipShape(RoundedRectangle(cornerRadius: KazumiTheme.cardRadius, style: .continuous))
+                VStack(alignment: .leading, spacing: 8) {
+                    if subject.name != subject.displayName {
+                        Text(subject.name).font(.callout).foregroundStyle(.secondary).lineLimit(1)
                     }
-                    if subject.rank > 0 { Text("Bangumi #\(subject.rank)") }
-                    if subject.episodeCount > 0 { Text("\(subject.episodeCount) 话") }
-                }
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                if !subject.airDate.isEmpty {
-                    Text("开播 \(subject.airDate)").font(.callout).foregroundStyle(.secondary)
-                }
-                HStack {
-                    Button {
-                        model.toggleFavorite(subject)
-                    } label: {
-                        Label(model.isFavorite(subject.id) ? "已追番" : "追番", systemImage: model.isFavorite(subject.id) ? "heart.fill" : "heart")
+                    Text("放送开始")
+                        .font(.callout)
+                    Text(subject.airDate.isEmpty ? "未知" : subject.airDate)
+                        .font(.system(size: 20, weight: .bold))
+                        .foregroundStyle(Color.accentColor)
+                    if model.settings.showRating {
+                        Text(subject.votes > 0 ? "\(subject.votes) 人评分" : "暂无评分人数")
+                            .font(.callout)
+                        HStack(spacing: 8) {
+                            Text(subject.score > 0 ? String(format: "%.1f", subject.score) : "—")
+                                .font(.system(size: 16, weight: .bold))
+                                .foregroundStyle(Color.accentColor)
+                            ScoreStars(score: subject.score)
+                        }
+                        Text("Bangumi Ranked")
+                            .font(.callout)
+                        Text(subject.rank > 0 ? "#\(subject.rank)" : "—")
+                            .font(.system(size: 20, weight: .bold))
+                            .foregroundStyle(Color.accentColor)
                     }
-                    .buttonStyle(.borderedProminent)
-                    Button("搜索片源") {
-                        Task { await model.findSources(for: subject) }
+                    Spacer(minLength: 0)
+                    HStack {
+                        Button {
+                            model.toggleFavorite(subject)
+                        } label: {
+                            Label(model.isFavorite(subject.id) ? "已追番" : "追番", systemImage: model.isFavorite(subject.id) ? "heart.fill" : "heart")
+                        }
+                        .buttonStyle(.borderedProminent)
+                        Button("搜索片源") {
+                            Task { await model.findSources(for: subject) }
+                        }
+                        .disabled(model.sourceLoading || model.enabledRules.isEmpty)
                     }
-                    .disabled(model.sourceLoading || model.enabledRules.isEmpty)
+                    if model.enabledRules.isEmpty {
+                        Text("导入规则后才能搜索片源。").font(.caption).foregroundStyle(.secondary)
+                    }
                 }
-                if model.enabledRules.isEmpty {
-                    Text("导入规则后才能搜索片源。").font(.caption).foregroundStyle(.secondary)
-                }
+                .frame(maxWidth: .infinity, minHeight: 258, alignment: .topLeading)
             }
-            Spacer(minLength: 0)
         }
     }
 
@@ -120,8 +132,25 @@ struct DetailView: View {
                 }
                 .padding(12)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(.background, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .background(KazumiTheme.card(scheme), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             }
         }
+    }
+}
+
+private struct ScoreStars: View {
+    var score: Double
+
+    var body: some View {
+        let filled = score > 0 ? score / 2 : 0
+        HStack(spacing: 1) {
+            ForEach(0..<5, id: \.self) { index in
+                let threshold = Double(index) + 1
+                Image(systemName: filled >= threshold ? "star.fill" : filled >= threshold - 0.5 ? "star.leadinghalf.filled" : "star")
+                    .font(.system(size: 14))
+                    .foregroundStyle(Color.accentColor)
+            }
+        }
+        .accessibilityLabel(score > 0 ? String(format: "评分 %.1f", score) : "暂无评分")
     }
 }

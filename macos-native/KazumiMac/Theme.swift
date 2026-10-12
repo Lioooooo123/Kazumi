@@ -16,23 +16,37 @@ enum KazumiTheme {
         }
     }
 
+    /// Content well. Flutter paints this with `colorScheme.primaryContainer`.
     static func canvas(_ scheme: ColorScheme) -> Color {
         scheme == .dark
-            ? Color(red: 0.07, green: 0.09, blue: 0.08)
-            : Color(red: 0.91, green: 0.95, blue: 0.91)
+            ? Color(red: 0.05, green: 0.09, blue: 0.07)
+            : Color(red: 0.82, green: 0.91, blue: 0.84)
     }
 
+    /// Grid cards sit on the green well the way Material `Card` uses `surface`.
     static func card(_ scheme: ColorScheme) -> Color {
         scheme == .dark
-            ? Color(red: 0.13, green: 0.16, blue: 0.14)
+            ? Color(red: 0.11, green: 0.14, blue: 0.12)
             : Color.white
     }
 
+    /// Timeline cards use `surfaceContainerLow`, a step above the canvas.
+    static func timelineCard(_ scheme: ColorScheme) -> Color {
+        scheme == .dark
+            ? Color(red: 0.14, green: 0.18, blue: 0.15)
+            : Color(red: 0.94, green: 0.97, blue: 0.94)
+    }
+
+    /// Rating chip. Flutter uses `secondaryContainer`.
     static func chip(_ scheme: ColorScheme) -> Color {
         scheme == .dark
-            ? Color(red: 0.18, green: 0.24, blue: 0.20)
-            : Color(red: 0.86, green: 0.93, blue: 0.87)
+            ? Color(red: 0.20, green: 0.28, blue: 0.22)
+            : Color(red: 0.84, green: 0.91, blue: 0.86)
     }
+
+    static let cardSpacing: CGFloat = 8
+    static let cardRadius: CGFloat = 12
+    static let timelineRadius: CGFloat = 28
 }
 
 extension Color {

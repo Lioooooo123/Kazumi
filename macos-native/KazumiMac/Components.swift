@@ -1,5 +1,6 @@
 // Kazumi macOS native port. GPL-3.0-or-later. See LICENSE.
 import AppKit
+import ImageIO
 import SwiftUI
 import KazumiCore
 
@@ -12,9 +13,32 @@ final class CoverLoader {
         return cache
     }()
     private var disk: ImageDiskCache?
+    private var inflight = Set<URL>()
 
     func configure(directory: URL) {
         disk = ImageDiskCache(directory: directory)
+    }
+
+    /// Fills the disk cache ahead of scrolling. Decoding waits until a card appears.
+    func prefetch(_ urlStrings: [String]) {
+        guard let disk else { return }
+        var batch: [URL] = []
+        for raw in urlStrings {
+            guard let url = URL(string: raw), !raw.isEmpty else { continue }
+            if memory.object(forKey: url as NSURL) != nil || inflight.contains(url) { continue }
+            inflight.insert(url)
+            batch.append(url)
+            if batch.count == 16 { break }
+        }
+        guard !batch.isEmpty else { return }
+        Task {
+            await disk.prefetch(batch, limit: 4) { url in
+                try await CoverLoader.loadData(from: url)
+            }
+            for url in batch {
+                inflight.remove(url)
+            }
+        }
     }
 
     func image(for urlString: String) async -> NSImage? {
@@ -29,12 +53,29 @@ final class CoverLoader {
             } else {
                 data = try await CoverLoader.loadData(from: url)
             }
-            guard let image = NSImage(data: data) else { return nil }
+            guard let image = CoverLoader.thumbnail(from: data) else { return nil }
             memory.setObject(image, forKey: url as NSURL)
             return image
         } catch {
             return nil
         }
+    }
+
+    static func thumbnail(from data: Data) -> NSImage? {
+        let sourceOptions = [kCGImageSourceShouldCache: false] as CFDictionary
+        guard let source = CGImageSourceCreateWithData(data as CFData, sourceOptions) else {
+            return NSImage(data: data)
+        }
+        let thumbOptions: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceThumbnailMaxPixelSize: 480,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceShouldCacheImmediately: true,
+        ]
+        guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, thumbOptions as CFDictionary) else {
+            return NSImage(data: data)
+        }
+        return NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
     }
 
     nonisolated static func loadData(from url: URL) async throws -> Data {
@@ -86,53 +127,56 @@ struct BangumiCard: View {
                 .clipped()
             Text(subject.displayName)
                 .font(.system(size: 13, weight: .medium))
+                .tracking(0.3)
                 .foregroundStyle(.primary)
                 .lineLimit(2)
                 .multilineTextAlignment(.leading)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 8)
-                .frame(maxWidth: .infinity, minHeight: 48, alignment: .topLeading)
+                .padding(EdgeInsets(top: 4, leading: 6, bottom: 6, trailing: 6))
+                .frame(maxWidth: .infinity, minHeight: 44, alignment: .topLeading)
         }
         .background(KazumiTheme.card(scheme))
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.06), lineWidth: 1)
-        )
+        .clipShape(RoundedRectangle(cornerRadius: KazumiTheme.cardRadius, style: .continuous))
     }
 }
 
 struct TimelineCard: View {
     var subject: BangumiSubject
     var showRating: Bool
+    var isWatching: Bool
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
-        HStack(alignment: .top, spacing: 14) {
+        HStack(alignment: .top, spacing: 16) {
             CoverImage(url: subject.coverURL)
-                .frame(width: 92, height: 132)
-                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .frame(width: 88, height: 132)
+                .clipShape(RoundedRectangle(cornerRadius: KazumiTheme.timelineRadius - 12, style: .continuous))
             VStack(alignment: .leading, spacing: 8) {
                 Text(subject.displayName)
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(.system(size: 16, weight: .bold))
                     .lineLimit(2)
-                Text(metadata)
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
+                if !subject.timelineLine.isEmpty {
+                    Text(subject.timelineLine)
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
                 Spacer(minLength: 0)
-                HStack {
-                    if showRating, subject.score > 0 {
-                        Label(String(format: "%.1f", subject.score), systemImage: "star.fill")
-                            .font(.system(size: 12, weight: .semibold))
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(KazumiTheme.chip(scheme), in: Capsule())
-                    }
-                    if subject.rank > 0 {
-                        Text("Rank \(subject.rank)")
-                            .font(.system(size: 12))
-                            .foregroundStyle(.secondary)
+                if showRating || isWatching {
+                    HStack(spacing: 8) {
+                        if showRating {
+                            Text(subject.score > 0 ? String(format: "%.1f", subject.score) : "暂无评分")
+                                .font(.system(size: 12, weight: .semibold))
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 6)
+                                .background(KazumiTheme.chip(scheme), in: Capsule())
+                        }
+                        Spacer(minLength: 0)
+                        if isWatching {
+                            Image(systemName: "bookmark.fill")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundStyle(Color.accentColor)
+                                .help("正在追")
+                        }
                     }
                 }
             }
@@ -140,15 +184,8 @@ struct TimelineCard: View {
         }
         .padding(12)
         .frame(maxWidth: .infinity, minHeight: 156, alignment: .leading)
-        .background(KazumiTheme.card(scheme))
-        .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
-    }
-
-    private var metadata: String {
-        let tags = subject.metaTags.isEmpty ? subject.tags.map(\.name) : subject.metaTags
-        let names = tags.prefix(3).joined(separator: " · ")
-        if !names.isEmpty { return names }
-        return subject.name == subject.displayName ? subject.airDate : subject.name
+        .background(KazumiTheme.timelineCard(scheme))
+        .clipShape(RoundedRectangle(cornerRadius: KazumiTheme.timelineRadius, style: .continuous))
     }
 }
 

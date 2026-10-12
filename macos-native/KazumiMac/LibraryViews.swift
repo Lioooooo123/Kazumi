@@ -54,7 +54,35 @@ struct FavoriteCard: View {
                 .frame(maxWidth: .infinity, minHeight: 48, alignment: .topLeading)
         }
         .background(KazumiTheme.card(scheme))
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: KazumiTheme.cardRadius, style: .continuous))
+    }
+}
+
+struct ContinueCard: View {
+    var item: HistoryRecord
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        HStack(spacing: 10) {
+            CoverImage(url: item.imageURL)
+                .frame(width: 46, height: 68)
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            VStack(alignment: .leading, spacing: 4) {
+                Text(item.displayName)
+                    .font(.system(size: 13, weight: .semibold))
+                    .lineLimit(2)
+                Text(item.episodeName)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                ProgressView(value: item.progress)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(8)
+        .frame(width: 240, alignment: .leading)
+        .background(KazumiTheme.card(scheme))
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 }
 

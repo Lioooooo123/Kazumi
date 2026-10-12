@@ -93,6 +93,11 @@ final class AppModel {
         history = snapshot.history
         selectedWeekday = AnimeCalendar.localWeekday(Date())
         CoverLoader.shared.configure(directory: AppPaths.imageCache)
+        CoverLoader.shared.prefetch(history.prefix(8).map(\.imageURL))
+    }
+
+    var continueWatching: [HistoryRecord] {
+        ContinueWatching.select(history)
     }
 
     var enabledRules: [InstalledRule] { rules.filter(\.enabled) }
@@ -192,6 +197,7 @@ final class AppModel {
             }
             if !page.isEmpty { popularOffset += page.count }
             popularError = popular.isEmpty ? "没有拿到推荐数据" : nil
+            warm(page)
         } catch {
             guard popularTask == token else { return }
             popularError = describe(error)
@@ -221,6 +227,7 @@ final class AppModel {
             if timeline.allSatisfy(\.isEmpty) {
                 timelineError = "这一季没有放送数据"
             }
+            warm(Array(timeline.flatMap(\.self).prefix(24)))
         } catch {
             guard timelineToken == token else { return }
             timelineError = describe(error)
@@ -252,6 +259,7 @@ final class AppModel {
             let found = try await catalog
             searchBangumi = found
             for item in found { subjects[item.id] = item }
+            warm(Array(found.prefix(24)))
         } catch {
             searchBangumi = []
             searchError = describe(error)
@@ -345,6 +353,10 @@ final class AppModel {
             for await item in group { groups.append(item) }
             return groups.sorted { $0.ruleName.localizedStandardCompare($1.ruleName) == .orderedAscending }
         }
+    }
+
+    private func warm(_ subjects: [BangumiSubject]) {
+        CoverLoader.shared.prefetch(subjects.map(\.coverURL))
     }
 
     private func persist() {

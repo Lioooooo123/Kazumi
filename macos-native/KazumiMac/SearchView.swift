@@ -4,7 +4,7 @@ import KazumiCore
 
 struct SearchView: View {
     @Environment(AppModel.self) private var model
-    private let columns = [GridItem(.adaptive(minimum: 148, maximum: 190), spacing: 12)]
+    private let columns = [GridItem(.adaptive(minimum: 148, maximum: 190), spacing: KazumiTheme.cardSpacing)]
 
     var body: some View {
         @Bindable var model = model
@@ -30,7 +30,7 @@ struct SearchView: View {
                 if !model.searchBangumi.isEmpty {
                     Text("Bangumi")
                         .font(.title3.weight(.semibold))
-                    LazyVGrid(columns: columns, spacing: 12) {
+                    LazyVGrid(columns: columns, spacing: KazumiTheme.cardSpacing) {
                         ForEach(model.searchBangumi) { subject in
                             Button { model.open(subject) } label: { BangumiCard(subject: subject) }
                                 .buttonStyle(.plain)

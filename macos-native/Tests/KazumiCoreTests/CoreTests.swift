@@ -306,4 +306,103 @@ final class LibraryAndSnifferTests: XCTestCase {
         XCTAssertTrue(MediaSniffer.isDirect(URL(string: "https://cdn.example/master.m3u8?token=1")!))
         try? FileManager.default.removeItem(at: directory)
     }
+
+    func testPrefetchSkipsCachedURLs() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let cache = ImageDiskCache(directory: directory, maxBytes: 1024 * 1024)
+        let url = URL(string: "https://example.com/cover.jpg")!
+        let loads = LoadCounter()
+        await cache.prefetch([url, url]) { _ in
+            loads.add()
+            return Data("cover".utf8)
+        }
+        await cache.prefetch([url]) { _ in
+            loads.add()
+            return Data("other".utf8)
+        }
+        let stored = await cache.data(for: url)
+        XCTAssertEqual(stored, Data("cover".utf8))
+        XCTAssertEqual(loads.value, 1)
+        try? FileManager.default.removeItem(at: directory)
+    }
+}
+
+private final class LoadCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var count = 0
+    var value: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return count
+    }
+    func add() {
+        lock.lock()
+        count += 1
+        lock.unlock()
+    }
+}
+
+final class PlaybackFlowTests: XCTestCase {
+    func testTimelineLineMatchesFlutterCard() {
+        XCTAssertEqual(
+            CatalogText.timelineLine(
+                title: "甲",
+                info: "12话 / 完结",
+                metaTags: [],
+                tagNames: ["奇幻", "奇幻", "热血"],
+                originalName: "A"
+            ),
+            "12 话 · 奇幻 · 热血"
+        )
+        XCTAssertEqual(
+            CatalogText.timelineLine(title: "甲", info: "第12话", metaTags: [], tagNames: [], originalName: "A"),
+            "A"
+        )
+        XCTAssertEqual(
+            CatalogText.timelineLine(title: "甲", info: "", metaTags: [], tagNames: [], originalName: "甲"),
+            ""
+        )
+    }
+
+    func testResumeSkipsOpeningSecondAndCredits() {
+        XCTAssertEqual(PlaybackResume.position(saved: 30, savedDuration: 100, mediaDuration: 0), 30)
+        XCTAssertNil(PlaybackResume.position(saved: 0.4, savedDuration: 100, mediaDuration: 100))
+        XCTAssertNil(PlaybackResume.position(saved: 96, savedDuration: 100, mediaDuration: 100))
+        XCTAssertNil(PlaybackResume.position(saved: 40, savedDuration: 50, mediaDuration: 42))
+        XCTAssertEqual(PlaybackResume.position(saved: 20, savedDuration: 0, mediaDuration: 90), 20)
+    }
+
+    func testNextEpisodeAndContinueWatching() {
+        let episodes = [
+            EpisodeEntry(name: "1", url: "https://example.com/1"),
+            EpisodeEntry(name: "2", url: "https://example.com/2"),
+        ]
+        XCTAssertEqual(EpisodeSequence.next(after: "https://example.com/1", in: episodes)?.name, "2")
+        XCTAssertNil(EpisodeSequence.next(after: "https://example.com/2", in: episodes))
+        let history = [
+            HistoryRecord(subjectID: 1, name: "A", nameCN: "甲", imageURL: "", episodeName: "2", pageURL: "b", position: 10, duration: 100),
+            HistoryRecord(subjectID: 1, name: "A", nameCN: "甲", imageURL: "", episodeName: "1", pageURL: "a", position: 3, duration: 100),
+            HistoryRecord(subjectID: 2, name: "B", nameCN: "乙", imageURL: "", episodeName: "1", pageURL: "c", position: 99, duration: 100),
+            HistoryRecord(subjectID: 0, name: "C", nameCN: "", imageURL: "", episodeName: "3", pageURL: "d", position: 8, duration: 40),
+        ]
+        let picked = ContinueWatching.select(history)
+        XCTAssertEqual(picked.map(\.pageURL), ["b", "d"])
+    }
+
+    func testDanmakuLanesAvoidOverlap() {
+        let comments = [
+            DanmakuComment(id: 1, time: 0, mode: 1, colorRGB: 1, message: "a", source: ""),
+            DanmakuComment(id: 2, time: 0.2, mode: 1, colorRGB: 1, message: "b", source: ""),
+            DanmakuComment(id: 3, time: 7, mode: 1, colorRGB: 1, message: "c", source: ""),
+            DanmakuComment(id: 4, time: 1, mode: 5, colorRGB: 1, message: "top", source: ""),
+            DanmakuComment(id: 5, time: 1, mode: 1, colorRGB: 1, message: "广告", source: ""),
+        ]
+        let placed = DanmakuLanes.assign(comments: comments, at: 1.5, travel: 8, laneCount: 4, shield: ["广告"])
+        let lanes = Dictionary(uniqueKeysWithValues: placed.map { ($0.comment.id, $0.lane) })
+        XCTAssertNil(lanes[5])
+        XCTAssertNotEqual(lanes[1], lanes[2])
+        XCTAssertEqual(lanes[4], 1)
+        let later = DanmakuLanes.assign(comments: comments, at: 8, travel: 8, laneCount: 4, shield: [])
+        XCTAssertEqual(later.first { $0.comment.id == 3 }?.lane, 0)
+    }
 }

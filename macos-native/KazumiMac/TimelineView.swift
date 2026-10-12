@@ -23,7 +23,11 @@ struct SeasonCalendarView: View {
                             Button {
                                 model.open(subject)
                             } label: {
-                                TimelineCard(subject: subject, showRating: model.settings.showRating)
+                                TimelineCard(
+                                    subject: subject,
+                                    showRating: model.settings.showRating,
+                                    isWatching: model.isFavorite(subject.id)
+                                )
                             }
                             .buttonStyle(.plain)
                         }

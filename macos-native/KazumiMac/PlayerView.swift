@@ -19,7 +19,11 @@ struct PlayerScreen: View {
     @State private var danmakuNote = ""
     @State private var showControls = true
     @State private var didSeek = false
+    @State private var didAutoAdvance = false
+    @State private var controlsToken = 0
+    @State private var showDanmakuSettings = false
     @State private var lastSaved = Date.distantPast
+    @FocusState private var playerFocused: Bool
 
     var body: some View {
         ZStack {
@@ -44,15 +48,22 @@ struct PlayerScreen: View {
                     Text(status).foregroundStyle(.white)
                 }
             }
-            VStack {
-                topBar
-                Spacer()
-                if showControls { controlBar }
+            if showControls {
+                VStack {
+                    topBar
+                    Spacer()
+                    controlBar
+                }
             }
         }
         .focusable()
+        .focused($playerFocused)
         .focusEffectDisabled()
-        .onAppear { bind() }
+        .onAppear {
+            bind()
+            playerFocused = true
+            bumpControls()
+        }
         .onDisappear {
             remember()
             controller.stop()
@@ -62,9 +73,10 @@ struct PlayerScreen: View {
             await prepare()
         }
         .onContinuousHover { phase in
-            if case .active = phase { showControls = true }
+            if case .active = phase { bumpControls() }
         }
         .onKeyPress(.space) { toggle(); return .handled }
+        .onKeyPress("n") { playNext(); return .handled }
         .onKeyPress(.leftArrow) { seek(by: -5); return .handled }
         .onKeyPress(.rightArrow) { seek(by: 5); return .handled }
         .onKeyPress(.escape) { model.nowPlaying = nil; return .handled }
@@ -98,6 +110,16 @@ struct PlayerScreen: View {
             }
             .buttonStyle(.plain)
             .help("弹幕")
+            Button {
+                showDanmakuSettings.toggle()
+            } label: {
+                Image(systemName: "slider.horizontal.3")
+            }
+            .buttonStyle(.plain)
+            .help("弹幕设置")
+            .popover(isPresented: $showDanmakuSettings, arrowEdge: .bottom) {
+                danmakuSettings
+            }
         }
         .foregroundStyle(.white)
         .padding(16)
@@ -105,15 +127,28 @@ struct PlayerScreen: View {
     }
 
     private var controlBar: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 6) {
             Slider(value: seekBinding, in: 0...max(duration, 1))
-            HStack(spacing: 14) {
+                .padding(.horizontal, 4)
+            HStack(spacing: 16) {
                 Button { toggle() } label: {
                     Image(systemName: playing ? "pause.fill" : "play.fill")
+                        .font(.system(size: 18))
+                        .frame(width: 28, height: 28)
                 }
                 .buttonStyle(.plain)
+                .help(playing ? "暂停" : "播放")
+                Button { playNext() } label: {
+                    Image(systemName: "forward.end.fill")
+                        .font(.system(size: 16))
+                        .frame(width: 28, height: 28)
+                }
+                .buttonStyle(.plain)
+                .disabled(nextEpisode == nil)
+                .help("下一集")
                 Text("\(clock(time)) / \(clock(duration))")
                     .font(.caption.monospacedDigit())
+                Spacer(minLength: 8)
                 if candidates.count > 1 {
                     Menu("线路") {
                         ForEach(candidates, id: \.absoluteString) { url in
@@ -136,13 +171,28 @@ struct PlayerScreen: View {
                         }
                     }
                 }
-                Spacer()
-                Text(status).font(.caption).lineLimit(1)
+                Text(status).font(.caption).lineLimit(1).frame(maxWidth: 180, alignment: .trailing)
             }
         }
         .foregroundStyle(.white)
+        .padding(.horizontal, 16)
+        .padding(.top, 8)
+        .padding(.bottom, 12)
+        .background(LinearGradient(colors: [.clear, .black.opacity(0.72)], startPoint: .top, endPoint: .bottom))
+    }
+
+    private var danmakuSettings: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("弹幕").font(.headline)
+            Slider(value: opacityBinding, in: 0.3...1.0) { Text("不透明度") }
+            Slider(value: fontBinding, in: 12.0...32.0) { Text("字号") }
+            Slider(value: durationBinding, in: 4.0...16.0) { Text("滚动时长") }
+            Text("屏蔽词在设置里修改。")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
         .padding(16)
-        .background(.black.opacity(0.55))
+        .frame(width: 280)
     }
 
     private var seekBinding: Binding<Double> {
@@ -157,9 +207,15 @@ struct PlayerScreen: View {
             time = current
             duration = length
             playing = controller.player.rate > 0.01
-            if !didSeek, length > 1, let start = resumePoint, start > 1, start < length - 5 {
+            if !playing { showControls = true }
+            if !didSeek, length > 1, let record = savedProgress,
+               let start = PlaybackResume.position(saved: record.position, savedDuration: record.duration, mediaDuration: length) {
                 didSeek = true
                 controller.player.seek(to: CMTime(seconds: start, preferredTimescale: 600))
+            }
+            if !didAutoAdvance, length > 1, current >= length - 0.8, nextEpisode != nil {
+                didAutoAdvance = true
+                Task { playNext() }
             }
             if Date().timeIntervalSince(lastSaved) > 5 {
                 lastSaved = Date()
@@ -171,8 +227,35 @@ struct PlayerScreen: View {
         }
     }
 
-    private var resumePoint: Double? {
-        model.history.first { $0.pageURL == request.pageURL }?.position
+    private var savedProgress: HistoryRecord? {
+        model.history.first { $0.pageURL == request.pageURL }
+    }
+
+    private var nextEpisode: EpisodeEntry? {
+        EpisodeSequence.next(after: request.pageURL, in: request.episodes)
+    }
+
+    private var opacityBinding: Binding<Double> {
+        Binding(get: { model.settings.danmakuOpacity }, set: { value in model.updateSettings { $0.danmakuOpacity = value } })
+    }
+
+    private var fontBinding: Binding<Double> {
+        Binding(get: { model.settings.danmakuFontSize }, set: { value in model.updateSettings { $0.danmakuFontSize = value } })
+    }
+
+    private var durationBinding: Binding<Double> {
+        Binding(get: { model.settings.danmakuDuration }, set: { value in model.updateSettings { $0.danmakuDuration = value } })
+    }
+
+    private func bumpControls() {
+        showControls = true
+        controlsToken += 1
+        let token = controlsToken
+        Task {
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            guard token == controlsToken, playing, !showDanmakuSettings else { return }
+            showControls = false
+        }
     }
 
     private func prepare() async {
@@ -230,6 +313,11 @@ struct PlayerScreen: View {
     private func seek(by delta: Double) {
         let target = min(max(0, time + delta), duration > 0 ? duration : time + delta)
         controller.player.seek(to: CMTime(seconds: target, preferredTimescale: 600))
+    }
+
+    private func playNext() {
+        guard let episode = nextEpisode else { return }
+        switchTo(episode)
     }
 
     private func switchTo(_ episode: EpisodeEntry) {
@@ -366,23 +454,27 @@ struct DanmakuOverlay: View {
 
     private func visible(in size: CGSize, lanes: Int) -> [Placed] {
         let window = max(duration, 4)
-        return comments.compactMap { comment in
-            if DanmakuMatching.blocked(comment, shield: shield) { return nil }
-            let age = time - comment.time
-            guard age >= 0, age <= window else { return nil }
-            let lane = abs(comment.id) % lanes
+        return DanmakuLanes.assign(
+            comments: comments,
+            at: time,
+            travel: window,
+            laneCount: lanes,
+            shield: shield
+        ).map { placement in
+            let comment = placement.comment
+            let age = max(0, time - comment.time)
             if comment.isTop {
-                return Placed(id: comment.id, comment: comment, point: CGPoint(x: size.width / 2, y: laneHeight(lane, size: size)))
+                return Placed(id: comment.id, comment: comment, point: CGPoint(x: size.width / 2, y: laneHeight(placement.lane, size: size)))
             }
             if comment.isBottom {
-                let bottomLane = max(0, lanes - 1 - (abs(comment.id) % 3))
+                let bottomLane = placement.lane
                 return Placed(id: comment.id, comment: comment, point: CGPoint(x: size.width / 2, y: size.height - 48 - CGFloat(bottomLane) * (fontSize + 6)))
             }
             let textWidth = CGFloat(comment.message.count) * fontSize
-            let progress = age / window
+            let progress = min(1, age / window)
             let travel = size.width + textWidth
             let x = size.width + textWidth / 2 - CGFloat(progress) * travel
-            let y = 28 + CGFloat(lane) * (fontSize + 6)
+            let y = 28 + CGFloat(placement.lane) * (fontSize + 6)
             return Placed(id: comment.id, comment: comment, point: CGPoint(x: x, y: y))
         }
     }

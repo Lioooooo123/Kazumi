@@ -4,13 +4,22 @@ import KazumiCore
 
 struct PopularView: View {
     @Environment(AppModel.self) private var model
-    private let columns = [GridItem(.adaptive(minimum: 148, maximum: 190), spacing: 12)]
+    private let columns = [GridItem(.adaptive(minimum: 148, maximum: 190), spacing: KazumiTheme.cardSpacing)]
 
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView {
                 Color.clear.frame(height: 0).id("top")
-                LazyVGrid(columns: columns, spacing: 12) {
+                if !model.continueWatching.isEmpty {
+                    continueRow
+                }
+                if model.popularLoading {
+                    ProgressView()
+                        .progressViewStyle(.linear)
+                        .frame(height: 4)
+                        .padding(.horizontal, 20)
+                }
+                LazyVGrid(columns: columns, spacing: KazumiTheme.cardSpacing) {
                     ForEach(model.popular) { subject in
                         Button {
                             model.open(subject)
@@ -70,6 +79,27 @@ struct PopularView: View {
             }
         }
         .task { if model.popular.isEmpty { await model.loadPopular(reset: true) } }
+    }
+
+    private var continueRow: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("继续观看")
+                .font(.system(size: 16, weight: .bold))
+            ScrollView(.horizontal) {
+                LazyHStack(spacing: KazumiTheme.cardSpacing) {
+                    ForEach(model.continueWatching) { item in
+                        Button {
+                            model.play(model.playback(from: item))
+                        } label: {
+                            ContinueCard(item: item)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 16)
     }
 
     private func select(_ tag: String) {

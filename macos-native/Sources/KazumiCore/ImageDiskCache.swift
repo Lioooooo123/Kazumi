@@ -29,12 +29,52 @@ public actor ImageDiskCache {
     }
 
     public func fetch(_ url: URL, loader: @Sendable () async throws -> Data) async throws -> Data {
-        if let cached = data(for: url), !cached.isEmpty {
+        if let cached = cachedData(for: url) {
             return cached
         }
         let loaded = try await loader()
         store(loaded, for: url)
         return loaded
+    }
+
+    /// Downloads missing covers with a small concurrency cap. Cached URLs do not call `loader`.
+    public func prefetch(
+        _ urls: [URL],
+        limit: Int = 4,
+        loader: @escaping @Sendable (URL) async throws -> Data
+    ) async {
+        var pending: [URL] = []
+        var seen = Set<String>()
+        for url in urls where seen.insert(url.absoluteString).inserted {
+            if cachedData(for: url) == nil {
+                pending.append(url)
+            }
+        }
+        guard !pending.isEmpty else { return }
+        let width = min(max(1, limit), pending.count)
+        var index = 0
+        await withTaskGroup(of: Void.self) { group in
+            for _ in 0..<width {
+                let url = pending[index]
+                index += 1
+                group.addTask {
+                    _ = try? await self.fetch(url) { try await loader(url) }
+                }
+            }
+            while await group.next() != nil {
+                guard index < pending.count else { continue }
+                let url = pending[index]
+                index += 1
+                group.addTask {
+                    _ = try? await self.fetch(url) { try await loader(url) }
+                }
+            }
+        }
+    }
+
+    private func cachedData(for url: URL) -> Data? {
+        guard let data = data(for: url), !data.isEmpty else { return nil }
+        return data
     }
 
     private func fileURL(for url: URL) -> URL {
