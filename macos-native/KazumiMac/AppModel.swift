@@ -768,13 +768,13 @@ enum AppPaths {
     static var support: URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? URL(fileURLWithPath: NSTemporaryDirectory())
-        return base.appendingPathComponent("Kazumi", isDirectory: true)
+        return base.appendingPathComponent("XiaoLizi", isDirectory: true)
     }
 
     static var imageCache: URL {
         let base = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
             ?? URL(fileURLWithPath: NSTemporaryDirectory())
-        return base.appendingPathComponent("Kazumi/images", isDirectory: true)
+        return base.appendingPathComponent("XiaoLizi/images", isDirectory: true)
     }
 }
 

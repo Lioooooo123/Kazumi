@@ -11,17 +11,17 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		A10000000000000000000001 /* KazumiMac.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = KazumiMac.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A10000000000000000000001 /* XiaoLizi.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = XiaoLizi.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		F10000000000000000000001 /* Exceptions for "KazumiMac" folder in "KazumiMac" target */ = {
+		F10000000000000000000001 /* Exceptions for "KazumiMac" folder in "XiaoLizi" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
 				Kazumi.entitlements,
 			);
-			target = B10000000000000000000001 /* KazumiMac */;
+			target = B10000000000000000000001 /* XiaoLizi */;
 		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
@@ -29,7 +29,7 @@
 		E10000000000000000000001 /* KazumiMac */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
-				F10000000000000000000001 /* Exceptions for "KazumiMac" folder in "KazumiMac" target */,
+				F10000000000000000000001 /* Exceptions for "KazumiMac" folder in "XiaoLizi" target */,
 			);
 			explicitFileTypes = {
 			};
@@ -56,16 +56,16 @@
 			isa = PBXGroup;
 			children = (
 				E10000000000000000000001 /* KazumiMac */,
-				A10000000000000000000001 /* KazumiMac.app */,
+				A10000000000000000000001 /* XiaoLizi.app */,
 			);
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		B10000000000000000000001 /* KazumiMac */ = {
+		B10000000000000000000001 /* XiaoLizi */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 111111111111111111111106 /* Build configuration list for PBXNativeTarget "KazumiMac" */;
+			buildConfigurationList = 111111111111111111111106 /* Build configuration list for PBXNativeTarget "XiaoLizi" */;
 			buildPhases = (
 				C20000000000000000000002 /* Sources */,
 				C10000000000000000000001 /* Frameworks */,
@@ -78,12 +78,12 @@
 			fileSystemSynchronizedGroups = (
 				E10000000000000000000001 /* KazumiMac */,
 			);
-			name = KazumiMac;
+			name = XiaoLizi;
 			packageProductDependencies = (
 				P10000000000000000000001 /* KazumiCore */,
 			);
-			productName = KazumiMac;
-			productReference = A10000000000000000000001 /* KazumiMac.app */;
+			productName = XiaoLizi;
+			productReference = A10000000000000000000001 /* XiaoLizi.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -119,7 +119,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				B10000000000000000000001 /* KazumiMac */,
+				B10000000000000000000001 /* XiaoLizi */,
 			);
 		};
 /* End PBXProject section */
@@ -204,7 +204,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MARKETING_VERSION = 0.1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = app.kazumi.macos;
+				PRODUCT_BUNDLE_IDENTIFIER = app.xiaolizi.macos;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
@@ -230,7 +230,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MARKETING_VERSION = 0.1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = app.kazumi.macos;
+				PRODUCT_BUNDLE_IDENTIFIER = app.xiaolizi.macos;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
@@ -249,7 +249,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		111111111111111111111106 /* Build configuration list for PBXNativeTarget "KazumiMac" */ = {
+		111111111111111111111106 /* Build configuration list for PBXNativeTarget "XiaoLizi" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				111111111111111111111103 /* Debug */,

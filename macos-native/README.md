@@ -1,6 +1,8 @@
-# Kazumi macOS
+# 小栗子
 
-Kazumi 的原生 macOS 客户端。界面沿用 Flutter 版的信息架构和绿色卡片风格，交互改成 Mac 上的 `NavigationSplitView`、工具栏和 AVKit 播放器。原有 Flutter 工程没有改动。
+小栗子是 [Kazumi](https://github.com/Predidit/Kazumi) 的原生 macOS 客户端。界面沿用 Flutter 版的信息架构和绿色卡片风格，交互改成 Mac 上的 `NavigationSplitView`、工具栏和 AVKit 播放器。原有 Flutter 工程没有改动。
+
+Finder、程序坞和菜单栏显示名是 **小栗子**。Xcode 目标、scheme 和产品名是 `XiaoLizi`，bundle id 是 `app.xiaolizi.macos`。规则格式、`kazumi://` 和官方 KazumiRules 仓库仍沿用上游名称。核心库模块名仍是 `KazumiCore`。
 
 目标系统是 **macOS 14+**，需要 **Xcode 16+**。播放、弹幕层和窗口都使用 SwiftUI / AppKit / AVKit，因此只能在 Mac 上编译运行。规则解析、Bangumi 数据模型和本地资料库放在 `KazumiCore` 里，可以在 Linux 上用 Swift 工具链做单元测试。
 
@@ -29,7 +31,7 @@ macos-native/
 - 追番、历史、规则和设置的 JSON 文件。
 - 封面磁盘缓存，以及从网页里提取 m3u8 / mp4 等直链。
 
-`KazumiMac` 把这些接成一个窗口：
+界面目录 `KazumiMac` 把这些接成一个窗口，产品名是小栗子：
 
 | 侧栏 | 作用 |
 | --- | --- |
@@ -51,14 +53,16 @@ macos-native/
 1. 用 Xcode 16 或更新版本打开 `macos-native/KazumiMac.xcodeproj`。
 2. 等它解析本地 Swift 包 `KazumiCore`。包和工程在同一层，工程引用的是 `.`。
 3. 签名选你的 Personal Team，或者 Signing 里选 “Sign to Run Locally”。
-4. 运行 scheme `KazumiMac`。最低系统是 macOS 14。
+4. 运行 scheme `XiaoLizi`。产物是 `XiaoLizi.app`，最低系统是 macOS 14。
 
-应用沙盒打开了出站网络，以及用户选择文件的只读权限（用来导入规则）。`Info.plist` 里允许任意 HTTP 加载，因为有的规则站点仍然是 http。
+应用沙盒打开了出站网络，以及用户选择文件的读写和书签权限（用来导入规则和选择下载目录）。`Info.plist` 里允许任意 HTTP 加载，因为有的规则站点仍然是 http。菜单栏名称和关于面板来自 `CFBundleName` / `CFBundleDisplayName`（小栗子）；版权行保留对 Kazumi 与 GPL-3.0-or-later 的署名。
 
 数据写在：
 
-- `~/Library/Application Support/Kazumi/library.json`：规则、追番、历史、设置
-- `~/Library/Caches/Kazumi/images/`：封面缓存
+- `~/Library/Application Support/XiaoLizi/library.json`：规则、追番、历史、设置
+- `~/Library/Caches/XiaoLizi/images/`：封面缓存
+
+bundle id 从早期草稿的 `app.kazumi.macos` 改成了 `app.xiaolizi.macos`。沙盒容器会换到新 id 下面，之前若在「Kazumi」目录里写过资料，不会自动迁过来。
 
 命令键：`⌘1` 推荐，`⌘2` 时间表，`⌘F` 搜索，`⌘3` 追番，`⌘4` 历史，`⌘,` 设置。播放器里空格播放暂停，左右方向键快进快退 5 秒，上下方向键调音量，Esc 关闭。
 
@@ -122,12 +126,12 @@ swift test
 
 ## 这次验证了什么
 
-在一台 Mac 上用 **Xcode 27.0 / Swift 6.4 / macOS 27.2** 执行了 `cd macos-native && swift test`（19 个测试通过），并编译运行了 `KazumiMac`。修正两处编译错误后 **BUILD SUCCEEDED**，应用可以启动：
+在一台 Mac 上用 **Xcode 27.0 / Swift 6.4 / macOS 27.2** 执行了 `cd macos-native && swift test`（当时 19 个测试通过），并编译运行了当时的目标 `KazumiMac`。修正两处编译错误后 **BUILD SUCCEEDED**，应用可以启动：
 
 - 使用 `KazumiCore` 类型的文件需要自己 `import KazumiCore`（Xcode 27 不再让这个导入跨文件可见）。
 - `ContentUnavailableView` 的 `description` 参数是 `Text`，不能再传闭包。
 
-同一套核心库在 Linux（Ubuntu 24.04，Swift 6.2）上 `swift test` 为 37 个测试通过，并用 `-swift-version 6` 和 `-strict-concurrency=complete` 编译通过。规则页、播放器、下载、同步和设置这些 SwiftUI 改动还需要在 Xcode 27 上再编一次。
+同一套核心库在 Linux（Ubuntu 24.04，Swift 6.2）上 `swift test` 为 37 个测试通过，并用 `-swift-version 6` 和 `-strict-concurrency=complete` 编译通过。显示名改为小栗子、目标改为 `XiaoLizi` 之后，还没有在 Xcode 27 上重新编译。规则页、播放器、下载、同步和设置这些 SwiftUI 改动也需要再编一次。
 
 还没有验证：
 

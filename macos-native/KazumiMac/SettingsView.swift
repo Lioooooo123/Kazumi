@@ -125,9 +125,9 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
             }
             Section("关于") {
-                LabeledContent("版本", value: "Kazumi macOS \(KazumiCore.version)")
+                LabeledContent("版本", value: "小栗子 \(KazumiCore.version)")
                 LabeledContent("规则 API", value: "\(KazumiCore.ruleAPILevel)")
-                Text("本原生端口基于 Kazumi，采用 GPL-3.0。图标来自 Yuquanaaa，使用范围与上游项目说明一致，不是可自由再分发的素材。界面字体使用系统字体，不内嵌 Mi Sans。")
+                Text("小栗子是 Kazumi 的原生 macOS 端口，采用 GPL-3.0-or-later。图标来自 Yuquanaaa，使用范围与上游项目说明一致，不是可自由再分发的素材。界面字体使用系统字体，不内嵌 Mi Sans。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Link("项目主页", destination: URL(string: KazumiCore.projectURL)!)

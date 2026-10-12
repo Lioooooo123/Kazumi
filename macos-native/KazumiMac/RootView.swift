@@ -26,7 +26,7 @@ struct RootView: View {
             }
             .listStyle(.sidebar)
             .navigationSplitViewColumnWidth(min: 180, ideal: 208, max: 260)
-            .navigationTitle("Kazumi")
+            .navigationTitle("小栗子")
         } detail: {
             NavigationStack(path: $model.path) {
                 detail(for: model.sidebar)
