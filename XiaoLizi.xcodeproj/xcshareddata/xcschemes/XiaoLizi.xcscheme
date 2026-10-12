@@ -17,7 +17,7 @@
                BlueprintIdentifier = "B10000000000000000000001"
                BuildableName = "XiaoLizi.app"
                BlueprintName = "XiaoLizi"
-               ReferencedContainer = "container:KazumiMac.xcodeproj">
+               ReferencedContainer = "container:XiaoLizi.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
       </BuildActionEntries>
@@ -45,7 +45,7 @@
             BlueprintIdentifier = "B10000000000000000000001"
             BuildableName = "XiaoLizi.app"
             BlueprintName = "XiaoLizi"
-            ReferencedContainer = "container:KazumiMac.xcodeproj">
+            ReferencedContainer = "container:XiaoLizi.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </LaunchAction>
@@ -62,7 +62,7 @@
             BlueprintIdentifier = "B10000000000000000000001"
             BuildableName = "XiaoLizi.app"
             BlueprintName = "XiaoLizi"
-            ReferencedContainer = "container:KazumiMac.xcodeproj">
+            ReferencedContainer = "container:XiaoLizi.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </ProfileAction>

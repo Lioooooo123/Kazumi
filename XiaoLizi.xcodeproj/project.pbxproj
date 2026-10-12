@@ -15,27 +15,27 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		F10000000000000000000001 /* Exceptions for "KazumiMac" folder in "XiaoLizi" target */ = {
+		F10000000000000000000001 /* Exceptions for "App" folder in "XiaoLizi" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
-				Kazumi.entitlements,
+				XiaoLizi.entitlements,
 			);
 			target = B10000000000000000000001 /* XiaoLizi */;
 		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		E10000000000000000000001 /* KazumiMac */ = {
+		E10000000000000000000001 /* App */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
-				F10000000000000000000001 /* Exceptions for "KazumiMac" folder in "XiaoLizi" target */,
+				F10000000000000000000001 /* Exceptions for "App" folder in "XiaoLizi" target */,
 			);
 			explicitFileTypes = {
 			};
 			explicitFolders = (
 			);
-			path = KazumiMac;
+			path = App;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -55,7 +55,7 @@
 		D10000000000000000000001 = {
 			isa = PBXGroup;
 			children = (
-				E10000000000000000000001 /* KazumiMac */,
+				E10000000000000000000001 /* App */,
 				A10000000000000000000001 /* XiaoLizi.app */,
 			);
 			sourceTree = "<group>";
@@ -76,7 +76,7 @@
 			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
-				E10000000000000000000001 /* KazumiMac */,
+				E10000000000000000000001 /* App */,
 			);
 			name = XiaoLizi;
 			packageProductDependencies = (
@@ -101,7 +101,7 @@
 					};
 				};
 			};
-			buildConfigurationList = 111111111111111111111105 /* Build configuration list for PBXProject "KazumiMac" */;
+			buildConfigurationList = 111111111111111111111105 /* Build configuration list for PBXProject "XiaoLizi" */;
 			developmentRegion = "zh-Hans";
 			hasScannedForEncodings = 0;
 			knownRegions = (
@@ -190,7 +190,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = KazumiMac/Kazumi.entitlements;
+				CODE_SIGN_ENTITLEMENTS = App/XiaoLizi.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
@@ -198,7 +198,7 @@
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = KazumiMac/Info.plist;
+				INFOPLIST_FILE = App/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -216,7 +216,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = KazumiMac/Kazumi.entitlements;
+				CODE_SIGN_ENTITLEMENTS = App/XiaoLizi.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
@@ -224,7 +224,7 @@
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = KazumiMac/Info.plist;
+				INFOPLIST_FILE = App/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -240,7 +240,7 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		111111111111111111111105 /* Build configuration list for PBXProject "KazumiMac" */ = {
+		111111111111111111111105 /* Build configuration list for PBXProject "XiaoLizi" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				111111111111111111111101 /* Debug */,
