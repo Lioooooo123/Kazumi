@@ -150,7 +150,7 @@ public struct RuleEngine: Sendable {
     private func parseXPathSearch(_ raw: String, rule: PluginRule) throws -> SearchParseResult {
         let root = HTMLParser.parse(raw)
         if detectsCaptcha(raw, rule: rule, root: root) {
-            throw KazumiError.captchaRequired(plugin: rule.name)
+            throw KazumiError.captchaRequired(plugin: rule.name, pageURL: "")
         }
         let nodes = try XPath.query(rule.searchList, from: root)
         var items: [SearchHit] = []

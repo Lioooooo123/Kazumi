@@ -17,8 +17,9 @@ enum KazumiTheme {
     }
 
     /// Content well. Flutter paints this with `colorScheme.primaryContainer`.
-    static func canvas(_ scheme: ColorScheme) -> Color {
-        scheme == .dark
+    static func canvas(_ scheme: ColorScheme, oled: Bool = false) -> Color {
+        if oled && scheme == .dark { return .black }
+        return scheme == .dark
             ? Color(red: 0.05, green: 0.09, blue: 0.07)
             : Color(red: 0.82, green: 0.91, blue: 0.84)
     }

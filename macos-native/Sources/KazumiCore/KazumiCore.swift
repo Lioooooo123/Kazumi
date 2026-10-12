@@ -43,7 +43,7 @@ public enum KazumiCore {
 
 public enum KazumiError: Error, Equatable, CustomStringConvertible {
     case message(String)
-    case captchaRequired(plugin: String)
+    case captchaRequired(plugin: String, pageURL: String)
     case noResult(plugin: String)
     case http(status: Int, url: String)
 
@@ -51,8 +51,8 @@ public enum KazumiError: Error, Equatable, CustomStringConvertible {
         switch self {
         case .message(let text):
             return text
-        case .captchaRequired(let plugin):
-            return "\(plugin) 需要验证码。macOS 版尚未内置 WebView 验证。"
+        case .captchaRequired(let plugin, _):
+            return "\(plugin) 需要验证码。可以在规则搜索结果里打开验证页。"
         case .noResult(let plugin):
             return "\(plugin) 没有搜索结果"
         case .http(let status, let url):

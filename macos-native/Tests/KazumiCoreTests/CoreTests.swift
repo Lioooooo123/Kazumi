@@ -542,3 +542,103 @@ final class RuleCatalogTests: XCTestCase {
         PluginRule(json: try! JSONValue.parse(json))
     }
 }
+
+final class FeaturePortTests: XCTestCase {
+    func testGBKAndCharset() {
+        let data = Data([0xD6, 0xD0, 0xCE, 0xC4])
+        XCTAssertEqual(TextCharsets.decode(data, charset: "gbk"), "中文")
+        XCTAssertEqual(TextCharsets.charset(contentType: "text/html; charset=gb2312", bodyPrefix: nil), "gb2312")
+        let meta = Data("<meta charset=\"big5\">".utf8)
+        XCTAssertEqual(TextCharsets.charset(contentType: nil, bodyPrefix: meta), "big5")
+    }
+
+    func testSniffAndPlaylist() throws {
+        XCTAssertFalse(LegacySniff.accepts("https://googleads.g.doubleclick.net/a.mp4"))
+        XCTAssertFalse(LegacySniff.accepts("https://cdn.example/prestrain.html"))
+        XCTAssertTrue(LegacySniff.accepts("https://cdn.example/a.m3u8"))
+        let playlist = """
+        #EXTM3U
+        #EXT-X-STREAM-INF:BANDWIDTH=1000
+        720p.m3u8
+        #EXTINF:4,
+        seg-1.ts
+        https://cdn.example/seg-2.ts
+        """
+        let parsed = HLSPlaylist.parse(playlist, base: URL(string: "https://cdn.example/show/index.m3u8")!)
+        XCTAssertEqual(parsed.variant?.absoluteString, "https://cdn.example/show/720p.m3u8")
+        XCTAssertEqual(parsed.segments.map(\.lastPathComponent), ["seg-1.ts", "seg-2.ts"])
+        XCTAssertEqual(DownloadNames.fileName(title: "A/B", episode: "第1集", ext: "mp4"), "A B - 第1集.mp4")
+    }
+
+    func testShieldAndLibraryMerge() throws {
+        let older = ShieldSyncEntry(rule: "广告", updatedAt: 10, deviceId: "a", deleted: false)
+        let newer = ShieldSyncEntry(rule: "广告", updatedAt: 11, deviceId: "b", deleted: true)
+        let merged = ShieldSync.merge([[older], [newer]])
+        XCTAssertEqual(merged, [newer])
+        XCTAssertTrue(ShieldSync.activeRules(merged).isEmpty)
+        let text = ShieldSync.encode(merged)
+        XCTAssertEqual(try ShieldSync.decode(text), merged)
+        let early = HistoryRecord(subjectID: 1, name: "A", nameCN: "甲", imageURL: "", episodeName: "1", pageURL: "p", position: 1, duration: 10, updatedAt: Date(timeIntervalSince1970: 10))
+        let late = HistoryRecord(subjectID: 1, name: "A", nameCN: "甲", imageURL: "", episodeName: "1", pageURL: "p", position: 8, duration: 10, updatedAt: Date(timeIntervalSince1970: 20))
+        let bundle = LibrarySyncBundle.merge(
+            local: LibrarySyncBundle(histories: [early], favorites: []),
+            remote: LibrarySyncBundle(histories: [late], favorites: [])
+        )
+        XCTAssertEqual(bundle.histories.first?.position, 8)
+        XCTAssertEqual(WebDAVHeaders.authorization(username: "u", password: "p"), "Basic " + Data("u:p".utf8).base64EncodedString())
+    }
+
+    func testSyncPlayDLNAAndTrace() throws {
+        let hello = SyncPlayCodec.hello(username: "mac", room: "kazumi")
+        XCTAssertTrue(hello.contains("sharedPlaylists"))
+        let state = #"{"State":{"playstate":{"position":12.5,"paused":true,"doSeek":true}}}"#
+        XCTAssertEqual(SyncPlayCodec.parse(state), .state(position: 12.5, paused: true, seek: true))
+        let ssdp = "HTTP/1.1 200 OK\r\nLOCATION: http://192.168.1.8:8000/desc.xml\r\n"
+        XCTAssertEqual(DLNAMessages.location(in: ssdp), "http://192.168.1.8:8000/desc.xml")
+        XCTAssertTrue(DLNAMessages.searchRequest().contains("MediaRenderer"))
+        let xml = """
+        <service>
+          <serviceType>urn:schemas-upnp-org:service:AVTransport:1</serviceType>
+          <controlURL>/ctrl</controlURL>
+        </service>
+        """
+        XCTAssertEqual(
+            DLNAMessages.controlURL(in: xml, base: URL(string: "http://192.168.1.8:8000/desc.xml")!)?.absoluteString,
+            "http://192.168.1.8:8000/ctrl"
+        )
+        XCTAssertTrue(DLNAMessages.setAVTransportURI(mediaURL: "http://a/b.mp4", title: "A&B").contains("&amp;"))
+        let trace = try JSONValue.parse(#"{"result":[{"anilist":{"title":{"native":"葬送"}},"episode":1,"similarity":0.91,"image":"https://img"}]}"#)
+        XCTAssertEqual(TraceMoe.parse(trace).first?.title, "葬送")
+        let people = try JSONValue.parse(#"[{"name":"Lelouch","name_cn":"鲁路修","relation":"主角"}]"#)
+        XCTAssertEqual(BangumiExtras.credits(from: people).first?.name, "鲁路修")
+        XCTAssertEqual(SuperResolutionMode.fromStorage(3), .quality)
+        XCTAssertEqual(SuperResolutionMode.fromStorage(9), .off)
+        XCTAssertTrue(ProxyEndpoint(enabled: true, host: "", port: 1).sessionDictionary.isEmpty)
+        let visible = LibraryQuery.history([
+            HistoryRecord(subjectID: 1, name: "A", nameCN: "甲", imageURL: "", episodeName: "1", pageURL: "a", position: 1, duration: 100),
+            HistoryRecord(subjectID: 2, name: "B", nameCN: "乙", imageURL: "", episodeName: "完", pageURL: "b", position: 99, duration: 100),
+        ], query: "甲", unfinishedOnly: true)
+        XCTAssertEqual(visible.map(\.pageURL), ["a"])
+    }
+
+    func testMeasuredDanmakuLanes() {
+        func comment(_ id: Int, _ time: Double, _ message: String) -> DanmakuComment {
+            DanmakuComment(id: id, time: time, mode: 1, colorRGB: 1, message: message, source: "")
+        }
+        let sameTime = DanmakuLanes.assignMeasured(
+            comments: [(comment(1, 0, "a"), 20), (comment(2, 0, "b"), 20)],
+            at: 0, viewWidth: 100, travel: 10, laneCount: 4, shield: []
+        )
+        XCTAssertNotEqual(sameTime[0].lane, sameTime[1].lane)
+        let later = DanmakuLanes.assignMeasured(
+            comments: [(comment(1, 0, "a"), 20), (comment(2, 2, "b"), 20)],
+            at: 2, viewWidth: 100, travel: 10, laneCount: 4, shield: []
+        )
+        XCTAssertEqual(later[0].lane, later[1].lane)
+        let chasing = DanmakuLanes.assignMeasured(
+            comments: [(comment(1, 0, "slow"), 10), (comment(2, 2, "fast"), 80)],
+            at: 2, viewWidth: 100, travel: 10, laneCount: 4, shield: []
+        )
+        XCTAssertNotEqual(chasing[0].lane, chasing[1].lane)
+    }
+}

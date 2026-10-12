@@ -157,4 +157,63 @@ public enum DanmakuLanes {
         }
         return placed
     }
+
+    /// Width-aware lanes. A later comment reuses a lane only after the previous
+    /// tail has fully entered, and only when it will not catch up before that
+    /// comment leaves. `travel` is the on-screen duration in seconds.
+    public static func assignMeasured(
+        comments: [(comment: DanmakuComment, width: Double)],
+        at time: Double,
+        viewWidth: Double,
+        travel: Double,
+        laneCount: Int,
+        shield: [String]
+    ) -> [DanmakuPlacement] {
+        let lanes = max(1, laneCount)
+        let span = max(travel, 0.1)
+        let view = max(viewWidth, 1)
+        let visible = comments.filter { item in
+            if DanmakuMatching.blocked(item.comment, shield: shield) { return false }
+            let age = time - item.comment.time
+            return age >= 0 && age <= span
+        }.sorted { lhs, rhs in
+            if lhs.comment.time == rhs.comment.time { return lhs.comment.id < rhs.comment.id }
+            return lhs.comment.time < rhs.comment.time
+        }
+        struct Occupant {
+            var start: Double
+            var width: Double
+            var speed: Double
+        }
+        var last = Array<Occupant?>(repeating: nil, count: lanes)
+        var placed: [DanmakuPlacement] = []
+        for item in visible {
+            let comment = item.comment
+            if comment.isTop || comment.isBottom {
+                placed.append(DanmakuPlacement(comment: comment, lane: abs(comment.id) % min(3, lanes)))
+                continue
+            }
+            let width = max(item.width, 1)
+            let speed = (view + width) / span
+            var chosen: Int?
+            for lane in 0..<lanes {
+                guard let previous = last[lane] else {
+                    chosen = lane
+                    break
+                }
+                let enteredAt = previous.start + previous.width / previous.speed
+                if comment.time < enteredAt { continue }
+                if speed > previous.speed {
+                    let catchTime = (speed * comment.time - previous.speed * previous.start) / (speed - previous.speed)
+                    if catchTime < previous.start + span { continue }
+                }
+                chosen = lane
+                break
+            }
+            let lane = chosen ?? 0
+            last[lane] = Occupant(start: comment.time, width: width, speed: speed)
+            placed.append(DanmakuPlacement(comment: comment, lane: lane))
+        }
+        return placed
+    }
 }

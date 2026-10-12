@@ -118,6 +118,7 @@ struct CoverImage: View {
 struct BangumiCard: View {
     var subject: BangumiSubject
     @Environment(\.colorScheme) private var scheme
+    @State private var hovering = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -136,6 +137,12 @@ struct BangumiCard: View {
         }
         .background(KazumiTheme.card(scheme))
         .clipShape(RoundedRectangle(cornerRadius: KazumiTheme.cardRadius, style: .continuous))
+        .scaleEffect(hovering ? 1.025 : 1)
+        .shadow(color: .black.opacity(hovering ? 0.12 : 0), radius: hovering ? 8 : 0, y: 3)
+        .onHover { hovering = $0 }
+        .animation(.easeOut(duration: 0.16), value: hovering)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(subject.displayName)
     }
 }
 

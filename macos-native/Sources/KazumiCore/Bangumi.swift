@@ -244,6 +244,37 @@ public struct BangumiClient: Sendable {
         try await search(keyword: "", tags: tag.isEmpty ? ["日本"] : [tag], limit: limit, offset: offset, sort: "rank")
     }
 
+    public func characters(id: Int) async throws -> [BangumiCredit] {
+        let response = try await http.get("\(KazumiCore.bangumiAPI)/v0/subjects/\(id)/characters", headers: headers)
+        guard let json = response.json else { throw KazumiError.message("角色响应无法解析") }
+        return BangumiExtras.credits(from: json)
+    }
+
+    public func staff(id: Int) async throws -> [BangumiCredit] {
+        let response = try await http.get("\(KazumiCore.bangumiAPI)/v0/subjects/\(id)/persons", headers: headers)
+        guard let json = response.json else { throw KazumiError.message("Staff 响应无法解析") }
+        return BangumiExtras.credits(from: json)
+    }
+
+    public func comments(id: Int) async throws -> [BangumiComment] {
+        let response = try await http.get("\(KazumiCore.bangumiNextAPI)/p1/subjects/\(id)/comments?limit=20&offset=0", headers: headers)
+        guard let json = response.json else { throw KazumiError.message("评论响应无法解析") }
+        return BangumiExtras.comments(from: json)
+    }
+
+    /// Bangumi collection type 3 is "在看".
+    public func updateCollection(id: Int, token: String, type: Int = 3) async throws {
+        let trimmed = token.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { throw KazumiError.message("请先在设置里填写 Bangumi 访问令牌") }
+        var headers = self.headers
+        headers["Authorization"] = "Bearer \(trimmed)"
+        _ = try await http.post(
+            "\(KazumiCore.bangumiAPI)/v0/users/-/collections/\(id)",
+            json: .object(["type": .int(type)]),
+            headers: headers
+        )
+    }
+
     public func subject(id: Int) async throws -> BangumiSubject {
         let response = try await http.get("\(KazumiCore.bangumiAPI)/v0/subjects/\(id)", headers: headers)
         guard let json = response.json else { throw KazumiError.message("条目详情无法解析") }

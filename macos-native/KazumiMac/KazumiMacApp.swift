@@ -23,9 +23,27 @@ struct KazumiMacApp: App {
                 Button("搜索") { model.sidebar = .search }.keyboardShortcut("f", modifiers: .command)
                 Button("追番") { model.sidebar = .favorites }.keyboardShortcut("3", modifiers: .command)
                 Button("历史") { model.sidebar = .history }.keyboardShortcut("4", modifiers: .command)
+                Button("下载") { model.sidebar = .downloads }.keyboardShortcut("6", modifiers: .command)
                 Divider()
                 Button("规则") { model.sidebar = .rules }.keyboardShortcut("5", modifiers: .command)
                 Button("设置") { model.sidebar = .settings }.keyboardShortcut(",", modifiers: .command)
+            }
+            CommandMenu("播放") {
+                Button("播放或暂停") { model.sendPlayer(PlayerCommand.toggle) }
+                    .keyboardShortcut(.space, modifiers: [])
+                    .disabled(model.nowPlaying == nil)
+                Button("后退 5 秒") { model.sendPlayer(PlayerCommand.back) }
+                    .keyboardShortcut(.leftArrow, modifiers: [])
+                    .disabled(model.nowPlaying == nil)
+                Button("前进 5 秒") { model.sendPlayer(PlayerCommand.forward) }
+                    .keyboardShortcut(.rightArrow, modifiers: [])
+                    .disabled(model.nowPlaying == nil)
+                Button("下一集") { model.sendPlayer(PlayerCommand.next) }
+                    .keyboardShortcut("n", modifiers: [])
+                    .disabled(model.nowPlaying == nil)
+                Button("全屏") { model.sendPlayer(PlayerCommand.fullscreen) }
+                    .keyboardShortcut("f", modifiers: [])
+                    .disabled(model.nowPlaying == nil)
             }
         }
     }

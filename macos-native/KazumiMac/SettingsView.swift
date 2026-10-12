@@ -61,6 +61,64 @@ struct SettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+            Section("画面") {
+                Toggle("深色时使用纯黑背景", isOn: boolBinding(\.oled))
+                Picker("超分", selection: intBinding(\.superResolution)) {
+                    ForEach(SuperResolutionMode.allCases, id: \.rawValue) { mode in
+                        Text(mode.label).tag(mode.rawValue)
+                    }
+                }
+                Text(SuperResolutionMode.fromStorage(model.settings.superResolution).detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Picker("外部播放器", selection: secretBinding(\.externalPlayer)) {
+                    Text("系统默认").tag("")
+                    Text("IINA").tag("iina")
+                    Text("VLC").tag("vlc")
+                    Text("浏览器").tag("browser")
+                }
+            }
+            Section("下载") {
+                Stepper("同时分段：\(model.settings.downloadParallel)", value: intBinding(\.downloadParallel), in: 1...8)
+                Toggle("下载时保存弹幕文本", isOn: boolBinding(\.saveDanmakuWithDownload))
+                Text("视频文件写到侧栏「下载」里选择的目录。m3u8 会把分片拼成一个文件。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Section("同步") {
+                TextField("WebDAV 地址", text: secretBinding(\.webDavURL))
+                TextField("用户名", text: secretBinding(\.webDavUsername))
+                SecureField("密码", text: secretBinding(\.webDavPassword))
+                Toggle("启用 WebDAV", isOn: boolBinding(\.webDavEnabled))
+                Button(model.syncing ? "同步中" : "立即同步") { Task { await model.syncWebDAV() } }
+                    .disabled(model.syncing)
+                Text("同步本机历史、追番，以及弹幕屏蔽词。历史文件在 /kazumiSync/history/macos-library.json，不覆盖 Flutter 的 Hive 变更日志。屏蔽词文档版本与 Flutter 相同。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                SecureField("Bangumi 访问令牌", text: secretBinding(\.bangumiToken))
+            }
+            Section("网络") {
+                Toggle("使用 HTTP 代理", isOn: Binding(
+                    get: { model.settings.proxyEnabled },
+                    set: { value in
+                        model.updateSettings { $0.proxyEnabled = value }
+                        model.refreshNetwork()
+                    }
+                ))
+                TextField("代理主机", text: secretBinding(\.proxyHost))
+                TextField("端口", value: intBinding(\.proxyPort), format: .number)
+                Text("代理只作用于这个应用自己的请求。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Section("一起看") {
+                TextField("服务器", text: secretBinding(\.syncplayHost))
+                TextField("端口", value: intBinding(\.syncplayPort), format: .number)
+                Toggle("TLS", isOn: boolBinding(\.syncplayTLS))
+                Text("默认 syncplay.pl:8996。这是基础的 JSON 房间同步，不包含 Flutter 客户端的全部房间事件。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
             Section("关于") {
                 LabeledContent("版本", value: "Kazumi macOS \(KazumiCore.version)")
                 LabeledContent("规则 API", value: "\(KazumiCore.ruleAPILevel)")
@@ -107,6 +165,10 @@ struct SettingsView: View {
     }
 
     private func boolBinding(_ keyPath: WritableKeyPath<AppSettings, Bool>) -> Binding<Bool> {
+        Binding(get: { model.settings[keyPath: keyPath] }, set: { value in model.updateSettings { $0[keyPath: keyPath] = value } })
+    }
+
+    private func intBinding(_ keyPath: WritableKeyPath<AppSettings, Int>) -> Binding<Int> {
         Binding(get: { model.settings[keyPath: keyPath] }, set: { value in model.updateSettings { $0[keyPath: keyPath] = value } })
     }
 

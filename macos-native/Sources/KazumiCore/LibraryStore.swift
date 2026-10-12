@@ -90,6 +90,23 @@ public struct AppSettings: Equatable, Sendable, Codable {
     public var showRating: Bool
     /// Flutter `SettingsKeys.enableGitProxy`: fetch the rule index from the mirror.
     public var useRuleMirror: Bool
+    public var oled: Bool
+    public var superResolution: Int
+    public var externalPlayer: String
+    public var webDavURL: String
+    public var webDavUsername: String
+    public var webDavPassword: String
+    public var webDavEnabled: Bool
+    public var bangumiToken: String
+    public var proxyEnabled: Bool
+    public var proxyHost: String
+    public var proxyPort: Int
+    public var downloadParallel: Int
+    public var saveDanmakuWithDownload: Bool
+    public var deviceID: String
+    public var syncplayHost: String
+    public var syncplayPort: Int
+    public var syncplayTLS: Bool
 
     public static let `default` = AppSettings(
         themeMode: "system",
@@ -103,7 +120,24 @@ public struct AppSettings: Equatable, Sendable, Codable {
         dandanAppID: "",
         dandanAppSecret: "",
         showRating: true,
-        useRuleMirror: false
+        useRuleMirror: false,
+        oled: false,
+        superResolution: SuperResolutionMode.off.rawValue,
+        externalPlayer: "",
+        webDavURL: "",
+        webDavUsername: "",
+        webDavPassword: "",
+        webDavEnabled: false,
+        bangumiToken: "",
+        proxyEnabled: false,
+        proxyHost: "",
+        proxyPort: 7890,
+        downloadParallel: 3,
+        saveDanmakuWithDownload: false,
+        deviceID: UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased(),
+        syncplayHost: SyncPlayCodec.defaultHost,
+        syncplayPort: SyncPlayCodec.defaultPort,
+        syncplayTLS: false
     )
 
     public init(
@@ -118,7 +152,24 @@ public struct AppSettings: Equatable, Sendable, Codable {
         dandanAppID: String,
         dandanAppSecret: String,
         showRating: Bool,
-        useRuleMirror: Bool = false
+        useRuleMirror: Bool = false,
+        oled: Bool = false,
+        superResolution: Int = SuperResolutionMode.off.rawValue,
+        externalPlayer: String = "",
+        webDavURL: String = "",
+        webDavUsername: String = "",
+        webDavPassword: String = "",
+        webDavEnabled: Bool = false,
+        bangumiToken: String = "",
+        proxyEnabled: Bool = false,
+        proxyHost: String = "",
+        proxyPort: Int = 7890,
+        downloadParallel: Int = 3,
+        saveDanmakuWithDownload: Bool = false,
+        deviceID: String = "",
+        syncplayHost: String = SyncPlayCodec.defaultHost,
+        syncplayPort: Int = SyncPlayCodec.defaultPort,
+        syncplayTLS: Bool = false
     ) {
         self.themeMode = themeMode
         self.accent = accent
@@ -132,12 +183,34 @@ public struct AppSettings: Equatable, Sendable, Codable {
         self.dandanAppSecret = dandanAppSecret
         self.showRating = showRating
         self.useRuleMirror = useRuleMirror
+        self.oled = oled
+        self.superResolution = superResolution
+        self.externalPlayer = externalPlayer
+        self.webDavURL = webDavURL
+        self.webDavUsername = webDavUsername
+        self.webDavPassword = webDavPassword
+        self.webDavEnabled = webDavEnabled
+        self.bangumiToken = bangumiToken
+        self.proxyEnabled = proxyEnabled
+        self.proxyHost = proxyHost
+        self.proxyPort = proxyPort
+        self.downloadParallel = downloadParallel
+        self.saveDanmakuWithDownload = saveDanmakuWithDownload
+        self.deviceID = deviceID.isEmpty
+            ? UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
+            : deviceID
+        self.syncplayHost = syncplayHost
+        self.syncplayPort = syncplayPort
+        self.syncplayTLS = syncplayTLS
     }
 
     private enum CodingKeys: String, CodingKey {
         case themeMode, accent, danmakuEnabled, danmakuOpacity, danmakuFontSize
         case danmakuDuration, danmakuShield, playbackRate, dandanAppID, dandanAppSecret
-        case showRating, useRuleMirror
+        case showRating, useRuleMirror, oled, superResolution, externalPlayer
+        case webDavURL, webDavUsername, webDavPassword, webDavEnabled, bangumiToken
+        case proxyEnabled, proxyHost, proxyPort, downloadParallel, saveDanmakuWithDownload
+        case deviceID, syncplayHost, syncplayPort, syncplayTLS
     }
 
     public init(from decoder: Decoder) throws {
@@ -154,6 +227,23 @@ public struct AppSettings: Equatable, Sendable, Codable {
         dandanAppSecret = try container.decodeIfPresent(String.self, forKey: .dandanAppSecret) ?? ""
         showRating = try container.decodeIfPresent(Bool.self, forKey: .showRating) ?? true
         useRuleMirror = try container.decodeIfPresent(Bool.self, forKey: .useRuleMirror) ?? false
+        oled = try container.decodeIfPresent(Bool.self, forKey: .oled) ?? false
+        superResolution = try container.decodeIfPresent(Int.self, forKey: .superResolution) ?? SuperResolutionMode.off.rawValue
+        externalPlayer = try container.decodeIfPresent(String.self, forKey: .externalPlayer) ?? ""
+        webDavURL = try container.decodeIfPresent(String.self, forKey: .webDavURL) ?? ""
+        webDavUsername = try container.decodeIfPresent(String.self, forKey: .webDavUsername) ?? ""
+        webDavPassword = try container.decodeIfPresent(String.self, forKey: .webDavPassword) ?? ""
+        webDavEnabled = try container.decodeIfPresent(Bool.self, forKey: .webDavEnabled) ?? false
+        bangumiToken = try container.decodeIfPresent(String.self, forKey: .bangumiToken) ?? ""
+        proxyEnabled = try container.decodeIfPresent(Bool.self, forKey: .proxyEnabled) ?? false
+        proxyHost = try container.decodeIfPresent(String.self, forKey: .proxyHost) ?? ""
+        proxyPort = try container.decodeIfPresent(Int.self, forKey: .proxyPort) ?? 7890
+        downloadParallel = try container.decodeIfPresent(Int.self, forKey: .downloadParallel) ?? 3
+        saveDanmakuWithDownload = try container.decodeIfPresent(Bool.self, forKey: .saveDanmakuWithDownload) ?? false
+        deviceID = try container.decodeIfPresent(String.self, forKey: .deviceID) ?? ""
+        syncplayHost = try container.decodeIfPresent(String.self, forKey: .syncplayHost) ?? SyncPlayCodec.defaultHost
+        syncplayPort = try container.decodeIfPresent(Int.self, forKey: .syncplayPort) ?? SyncPlayCodec.defaultPort
+        syncplayTLS = try container.decodeIfPresent(Bool.self, forKey: .syncplayTLS) ?? false
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -170,6 +260,23 @@ public struct AppSettings: Equatable, Sendable, Codable {
         try container.encode(dandanAppSecret, forKey: .dandanAppSecret)
         try container.encode(showRating, forKey: .showRating)
         try container.encode(useRuleMirror, forKey: .useRuleMirror)
+        try container.encode(oled, forKey: .oled)
+        try container.encode(superResolution, forKey: .superResolution)
+        try container.encode(externalPlayer, forKey: .externalPlayer)
+        try container.encode(webDavURL, forKey: .webDavURL)
+        try container.encode(webDavUsername, forKey: .webDavUsername)
+        try container.encode(webDavPassword, forKey: .webDavPassword)
+        try container.encode(webDavEnabled, forKey: .webDavEnabled)
+        try container.encode(bangumiToken, forKey: .bangumiToken)
+        try container.encode(proxyEnabled, forKey: .proxyEnabled)
+        try container.encode(proxyHost, forKey: .proxyHost)
+        try container.encode(proxyPort, forKey: .proxyPort)
+        try container.encode(downloadParallel, forKey: .downloadParallel)
+        try container.encode(saveDanmakuWithDownload, forKey: .saveDanmakuWithDownload)
+        try container.encode(deviceID, forKey: .deviceID)
+        try container.encode(syncplayHost, forKey: .syncplayHost)
+        try container.encode(syncplayPort, forKey: .syncplayPort)
+        try container.encode(syncplayTLS, forKey: .syncplayTLS)
     }
 }
 

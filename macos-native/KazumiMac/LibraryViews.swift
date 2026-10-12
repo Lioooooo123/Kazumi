@@ -4,7 +4,14 @@ import KazumiCore
 
 struct FavoritesView: View {
     @Environment(AppModel.self) private var model
+    @State private var query = ""
     private let columns = [GridItem(.adaptive(minimum: 148, maximum: 190), spacing: 12)]
+
+    private var visible: [FavoriteRecord] {
+        let needle = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !needle.isEmpty else { return model.favorites }
+        return model.favorites.filter { $0.displayName.lowercased().contains(needle) }
+    }
 
     var body: some View {
         Group {
@@ -12,8 +19,17 @@ struct FavoritesView: View {
                 EmptyHint(title: "还没有追番", message: "在番剧详情页点「追番」，会记在这台 Mac 上。", systemImage: "heart")
             } else {
                 ScrollView {
+                    TextField("搜索追番", text: $query)
+                        .textFieldStyle(.roundedBorder)
+                        .accessibilityLabel("搜索追番")
+                        .padding(.horizontal, 20)
+                        .padding(.top, 16)
+                    if visible.isEmpty {
+                        ContentUnavailableView("没有符合条件的追番", systemImage: "magnifyingglass", description: Text("换一个关键词。"))
+                            .frame(minHeight: 180)
+                    }
                     LazyVGrid(columns: columns, spacing: 12) {
-                        ForEach(model.favorites) { item in
+                        ForEach(visible) { item in
                             Button {
                                 if let subject = model.subject(id: item.subjectID) {
                                     model.open(subject)
@@ -90,12 +106,26 @@ struct HistoryView: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
+        @Bindable var model = model
+        let rows = model.filteredHistory()
         Group {
             if model.history.isEmpty {
                 EmptyHint(title: "没有播放记录", message: "开始播放后，进度会记在本地。", systemImage: "clock")
             } else {
+                VStack(spacing: 0) {
+                    HStack {
+                        TextField("搜索历史", text: $model.historyQuery)
+                            .textFieldStyle(.roundedBorder)
+                            .accessibilityLabel("搜索历史")
+                        Toggle("只看未看完", isOn: $model.historyUnfinishedOnly)
+                            .toggleStyle(.checkbox)
+                    }
+                    .padding(12)
+                    if rows.isEmpty {
+                        ContentUnavailableView("没有符合条件的记录", systemImage: "line.3.horizontal.decrease.circle", description: Text("换一个关键词，或关掉未看完筛选。"))
+                    } else {
                 List {
-                    ForEach(model.history) { item in
+                    ForEach(rows) { item in
                         Button {
                             model.play(model.playback(from: item))
                         } label: {
@@ -117,6 +147,8 @@ struct HistoryView: View {
                         .contextMenu {
                             Button("删除", role: .destructive) { model.removeHistory(item.id) }
                         }
+                    }
+                }
                     }
                 }
             }

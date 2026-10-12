@@ -100,6 +100,34 @@ public struct HTTPClient: Sendable {
         return HTTPResponse(statusCode: http.statusCode, data: data, text: text, url: http.url ?? url, headers: headerMap)
     }
 
+    /// Raw body for WebDAV XML and other non-JSON calls. Status 207 is accepted.
+    public func sendRaw(
+        method: String,
+        url: String,
+        body: Data? = nil,
+        headers: [String: String] = [:]
+    ) async throws -> HTTPResponse {
+        guard let target = URL(string: url) else {
+            throw KazumiError.message("URL 无效: \(url)")
+        }
+        var request = URLRequest(url: target, timeoutInterval: timeout)
+        request.httpMethod = method
+        request.httpBody = body
+        for (key, value) in headers {
+            request.setValue(value, forHTTPHeaderField: key)
+        }
+        let (data, http) = try await transport.send(request)
+        guard (200..<400).contains(http.statusCode) else {
+            throw KazumiError.http(status: http.statusCode, url: url)
+        }
+        let text = decodeText(data, headers: http)
+        var headerMap: [String: String] = [:]
+        for (key, value) in http.allHeaderFields {
+            headerMap[String(describing: key)] = String(describing: value)
+        }
+        return HTTPResponse(statusCode: http.statusCode, data: data, text: text, url: http.url ?? target, headers: headerMap)
+    }
+
     public func get(_ url: String, headers: [String: String] = [:]) async throws -> HTTPResponse {
         try await send(PreparedRequest(method: "GET", url: url), extraHeaders: headers)
     }
@@ -112,7 +140,18 @@ public struct HTTPClient: Sendable {
     }
 
     private func decodeText(_ data: Data, headers: HTTPURLResponse) -> String {
+        let declared = TextCharsets.charset(
+            contentType: headers.value(forHTTPHeaderField: "Content-Type"),
+            bodyPrefix: nil
+        )
+        if let declared, !TextCharsets.isUTF8(declared), let text = TextCharsets.decode(data, charset: declared) {
+            return text
+        }
         if let text = String(data: data, encoding: .utf8) { return text }
+        if let meta = TextCharsets.charset(contentType: nil, bodyPrefix: Data(data.prefix(4096))),
+           let text = TextCharsets.decode(data, charset: meta) {
+            return text
+        }
         return String(decoding: data, as: UTF8.self)
     }
 }
@@ -126,7 +165,7 @@ public struct RuleService: Sendable {
         self.http = http
     }
 
-    public func search(rule: PluginRule, keyword: String) async throws -> [SearchHit] {
+    public func search(rule: PluginRule, keyword: String, extraHeaders: [String: String] = [:]) async throws -> [SearchHit] {
         let request: PreparedRequest
         do {
             request = try engine.prepareSearch(rule: rule, keyword: keyword)
@@ -135,14 +174,22 @@ public struct RuleService: Sendable {
         }
         let response: HTTPResponse
         do {
-            response = try await http.send(request, userAgent: agent(rule), referer: referer(rule))
+            response = try await http.send(request, userAgent: agent(rule), referer: referer(rule), extraHeaders: extraHeaders)
         } catch let error as KazumiError {
             if case .http = error, rule.antiCrawler.enabled {
-                throw KazumiError.captchaRequired(plugin: rule.name)
+                throw KazumiError.captchaRequired(plugin: rule.name, pageURL: request.url)
             }
             throw error
         }
-        let parsed = try engine.parseSearch(rule: rule, raw: response.text)
+        let parsed: SearchParseResult
+        do {
+            parsed = try engine.parseSearch(rule: rule, raw: response.text)
+        } catch let error as KazumiError {
+            if case .captchaRequired(let plugin, _) = error {
+                throw KazumiError.captchaRequired(plugin: plugin, pageURL: response.url.absoluteString)
+            }
+            throw error
+        }
         if parsed.items.isEmpty {
             throw KazumiError.noResult(plugin: rule.name)
         }

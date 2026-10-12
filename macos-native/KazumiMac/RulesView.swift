@@ -13,6 +13,7 @@ struct RulesView: View {
     @State private var pasted = ""
     @State private var message = ""
     @State private var importing = false
+    @State private var editing: PluginRule?
 
     var body: some View {
         ScrollView {
@@ -25,6 +26,19 @@ struct RulesView: View {
             .frame(maxWidth: 860, alignment: .leading)
         }
         .navigationTitle("规则")
+        .toolbar {
+            ToolbarItem {
+                Button("新建规则") { editing = PluginRule.blank() }
+                    .accessibilityLabel("新建规则")
+            }
+        }
+        .sheet(item: $editing) { rule in
+            RuleEditor(rule: rule) { updated in
+                _ = model.importRules((try? PluginImporter.exportJSON([updated], pretty: true)) ?? "")
+                editing = nil
+                message = "已保存 \(updated.name)"
+            }
+        }
         .task { await model.refreshCatalog() }
         .fileImporter(isPresented: $importing, allowedContentTypes: [.json, .plainText, .text]) { result in
             switch result {
@@ -244,6 +258,8 @@ struct RulesView: View {
                     .textSelection(.enabled)
             }
             Spacer()
+            Button("编辑") { editing = plugin }
+                .accessibilityLabel("编辑 \(plugin.name)")
             if availability == .updatable {
                 if model.busyRuleNames.contains(plugin.id) {
                     ProgressView().controlSize(.small)
@@ -299,4 +315,59 @@ struct RulesView: View {
         formatter.dateFormat = "yyyy-MM-dd"
         return formatter
     }()
+}
+
+private struct RuleEditor: View {
+    @State private var draft: PluginRule
+    var onSave: (PluginRule) -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    init(rule: PluginRule, onSave: @escaping (PluginRule) -> Void) {
+        _draft = State(initialValue: rule)
+        self.onSave = onSave
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("规则编辑").font(.title3.weight(.semibold))
+            Text("这里改常用字段。复杂的 API 模板仍建议用 JSON 导入。")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+            Form {
+                TextField("名称", text: $draft.name)
+                TextField("版本", text: $draft.version)
+                TextField("作者", text: $draft.author)
+                TextField("API 级别", text: $draft.api)
+                TextField("网站", text: $draft.baseURL)
+                TextField("搜索地址", text: $draft.searchURL)
+                Picker("搜索模式", selection: $draft.searchMode) {
+                    Text("xpath").tag("xpath")
+                    Text("api").tag("api")
+                }
+                TextField("搜索列表", text: $draft.searchList)
+                TextField("标题", text: $draft.searchName)
+                TextField("链接", text: $draft.searchResult)
+                Picker("分集模式", selection: $draft.chapterMode) {
+                    Text("xpath").tag("xpath")
+                    Text("api").tag("api")
+                }
+                TextField("分集列表", text: $draft.chapterRoads)
+                TextField("分集链接", text: $draft.chapterResult)
+                Toggle("旧版解析", isOn: $draft.useLegacyParser)
+            }
+            .formStyle(.grouped)
+            HStack {
+                Spacer()
+                Button("取消") { dismiss() }
+                Button("保存") {
+                    onSave(draft)
+                    dismiss()
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(draft.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        }
+        .padding(16)
+        .frame(minWidth: 560, minHeight: 520)
+    }
 }

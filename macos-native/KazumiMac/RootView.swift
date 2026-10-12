@@ -17,6 +17,7 @@ struct RootView: View {
                 Section("收藏") {
                     Label("追番", systemImage: "heart").tag(SidebarItem.favorites)
                     Label("历史", systemImage: "clock.arrow.circlepath").tag(SidebarItem.history)
+                    Label("下载", systemImage: "arrow.down.circle").tag(SidebarItem.downloads)
                 }
                 Section {
                     Label("规则", systemImage: "puzzlepiece.extension").tag(SidebarItem.rules)
@@ -38,9 +39,46 @@ struct RootView: View {
                         }
                     }
             }
-            .background(KazumiTheme.canvas(scheme))
+            .background(KazumiTheme.canvas(scheme, oled: model.settings.oled))
         }
-        .background(KazumiTheme.canvas(scheme))
+        .background(KazumiTheme.canvas(scheme, oled: model.settings.oled))
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button("搜索", systemImage: "magnifyingglass") { model.sidebar = .search }
+                    .help("搜索")
+                    .accessibilityLabel("搜索")
+            }
+        }
+        .safeAreaInset(edge: .bottom) {
+            if !model.notice.isEmpty {
+                Text(model.notice)
+                    .font(.callout)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .background(.regularMaterial, in: Capsule())
+                    .padding(.bottom, 8)
+                    .accessibilityLabel(model.notice)
+            }
+        }
+        .onChange(of: model.notice) { _, value in
+            guard !value.isEmpty else { return }
+            Task {
+                try? await Task.sleep(nanoseconds: 4_000_000_000)
+                if model.notice == value { model.notice = "" }
+            }
+        }
+        .sheet(isPresented: Binding(
+            get: { !model.captchaURL.isEmpty },
+            set: { if !$0 { model.captchaURL = "" } }
+        )) {
+            if let url = URL(string: model.captchaURL) {
+                CaptchaSheet(url: url) { header in
+                    model.ruleCookies[model.captchaPlugin] = header
+                    model.captchaURL = ""
+                    model.postNotice("已保存验证 Cookie，可以重新搜索")
+                }
+            }
+        }
         .onChange(of: model.sidebar) { _, _ in
             model.path = NavigationPath()
         }
@@ -71,6 +109,7 @@ struct RootView: View {
         case .search: SearchView()
         case .favorites: FavoritesView()
         case .history: HistoryView()
+        case .downloads: DownloadsView()
         case .rules: RulesView()
         case .settings: SettingsView()
         }

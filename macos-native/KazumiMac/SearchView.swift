@@ -18,6 +18,20 @@ struct SearchView: View {
                         .keyboardShortcut(.defaultAction)
                         .disabled(model.searching)
                 }
+                DisclosureGroup("以图搜番") {
+                    HStack {
+                        TextField("图片网址", text: $model.traceQuery)
+                            .textFieldStyle(.roundedBorder)
+                        Button("识别") { Task { await model.searchByImage() } }
+                    }
+                    if let error = model.traceError {
+                        Text(error).font(.callout).foregroundStyle(.secondary)
+                    }
+                    ForEach(model.traceHits) { hit in
+                        Text("\(hit.title) · 第 \(hit.episode) 集 · \(Int(hit.similarity * 100))%")
+                            .font(.callout)
+                    }
+                }
                 if model.enabledRules.isEmpty {
                     Text("还没有启用的规则。Bangumi 资料可以搜索；片源需要在「规则」页导入 Kazumi JSON 或 kazumi:// 链接。")
                         .font(.callout)
@@ -42,6 +56,13 @@ struct SearchView: View {
                         Text(group.ruleName).font(.title3.weight(.semibold))
                         if let error = group.error {
                             Text(error).font(.callout).foregroundStyle(.secondary)
+                            if let page = group.captchaURL, !page.isEmpty {
+                                Button("打开验证") {
+                                    model.captchaPlugin = group.ruleName
+                                    model.captchaURL = page
+                                }
+                                .accessibilityLabel("打开 \(group.ruleName) 的验证页面")
+                            }
                         } else if group.hits.isEmpty {
                             Text("没有结果").font(.callout).foregroundStyle(.secondary)
                         } else {

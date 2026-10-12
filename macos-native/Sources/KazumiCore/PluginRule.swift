@@ -367,6 +367,18 @@ public struct PluginRule: Equatable, Sendable, Identifiable {
 
     public var id: String { name.lowercased() }
 
+    public static func blank() -> PluginRule {
+        PluginRule(json: .object([
+            "name": .string("新规则"),
+            "api": .string("8"),
+            "version": .string("1.0"),
+            "baseURL": .string("https://"),
+            "searchURL": .string("https://"),
+            "searchMode": .string("xpath"),
+            "chapterMode": .string("xpath"),
+        ]))
+    }
+
     public var requiresNewerClient: Bool {
         (Int(api) ?? 1) > KazumiCore.ruleAPILevel
     }

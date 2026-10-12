@@ -23,6 +23,7 @@ struct DetailView: View {
                         TagWrap(tags: subject.tags.prefix(16).map(\.name))
                     }
                     sourceSection(subject)
+                    creditSection(subject)
                 }
                 .padding(24)
                 .frame(maxWidth: 980, alignment: .leading)
@@ -36,7 +37,10 @@ struct DetailView: View {
             }
         }
         .navigationTitle(model.subject(id: subjectID)?.displayName ?? "详情")
-        .task { await model.loadSubject(subjectID) }
+        .task {
+            await model.loadSubject(subjectID)
+            await model.loadSubjectExtras(subjectID)
+        }
     }
 
     private func header(_ subject: BangumiSubject) -> some View {
@@ -80,6 +84,9 @@ struct DetailView: View {
                             Label(model.isFavorite(subject.id) ? "已追番" : "追番", systemImage: model.isFavorite(subject.id) ? "heart.fill" : "heart")
                         }
                         .buttonStyle(.borderedProminent)
+                        Button("同步到 Bangumi") { Task { await model.syncCollection(subject.id) } }
+                            .disabled(model.settings.bangumiToken.isEmpty)
+                            .help(model.settings.bangumiToken.isEmpty ? "先在设置里填写访问令牌" : "标记为在看")
                         Button("搜索片源") {
                             Task { await model.findSources(for: subject) }
                         }
@@ -90,6 +97,35 @@ struct DetailView: View {
                     }
                 }
                 .frame(maxWidth: .infinity, minHeight: 258, alignment: .topLeading)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func creditSection(_ subject: BangumiSubject) -> some View {
+        let people = model.subjectCredits[subject.id] ?? []
+        let crew = model.subjectStaff[subject.id] ?? []
+        let notes = model.subjectComments[subject.id] ?? []
+        if !people.isEmpty {
+            Text("角色").font(.title3.weight(.semibold))
+            Text(people.prefix(12).map { $0.role.isEmpty ? $0.name : "\($0.name) · \($0.role)" }.joined(separator: "，"))
+                .font(.callout)
+        }
+        if !crew.isEmpty {
+            Text("Staff").font(.title3.weight(.semibold))
+            Text(crew.prefix(12).map { $0.role.isEmpty ? $0.name : "\($0.name) · \($0.role)" }.joined(separator: "，"))
+                .font(.callout)
+        }
+        if !notes.isEmpty {
+            Text("评论").font(.title3.weight(.semibold))
+            ForEach(Array(notes.prefix(6))) { note in
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(note.user).font(.caption).foregroundStyle(.secondary)
+                    Text(note.text).font(.callout)
+                }
+                .padding(10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(.background, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             }
         }
     }

@@ -4,7 +4,7 @@ import SwiftUI
 import KazumiCore
 
 enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
-    case popular, timeline, search, favorites, history, rules, settings
+    case popular, timeline, search, favorites, history, downloads, rules, settings
     var id: String { rawValue }
 }
 
@@ -12,7 +12,16 @@ struct RuleSearchGroup: Identifiable, Hashable, Sendable {
     var ruleName: String
     var hits: [SearchHit]
     var error: String?
+    var captchaURL: String?
     var id: String { ruleName }
+}
+
+enum PlayerCommand {
+    static let toggle = "toggle"
+    static let back = "back"
+    static let forward = "forward"
+    static let next = "next"
+    static let fullscreen = "fullscreen"
 }
 
 struct EpisodeRoute: Hashable {
@@ -82,11 +91,29 @@ final class AppModel {
     var sourceGroups: [Int: [RuleSearchGroup]] = [:]
     var sourceLoading = false
     var nowPlaying: PlaybackRequest?
+    var playerCommand = ""
+    var playerCommandToken = 0
+    var notice = ""
+    var downloads: [DownloadRecord] = []
+    var downloadFolder: URL?
+    var syncing = false
+    var traceQuery = ""
+    var traceHits: [TraceHit] = []
+    var traceError: String?
+    var historyQuery = ""
+    var historyUnfinishedOnly = false
+    var captchaURL = ""
+    var captchaPlugin = ""
+    var ruleCookies: [String: String] = [:]
+    var subjectCredits: [Int: [BangumiCredit]] = [:]
+    var subjectStaff: [Int: [BangumiCredit]] = [:]
+    var subjectComments: [Int: [BangumiComment]] = [:]
 
     private let store: LibraryStore
-    private let bangumi = BangumiClient()
-    private let ruleService = RuleService()
-    private let rulesRepo = RuleRepository()
+    private var bangumi: BangumiClient
+    private var ruleService: RuleService
+    private var rulesRepo: RuleRepository
+    private let downloadStore: DownloadStore
     private var popularTask: UUID?
     private var searchToken = UUID()
     private var timelineToken = UUID()
@@ -95,14 +122,61 @@ final class AppModel {
     init() {
         let directory = AppPaths.support
         store = LibraryStore(directory: directory)
+        downloadStore = DownloadStore(directory: directory)
         let snapshot = (try? store.load()) ?? .empty
         settings = snapshot.settings
+        if settings.deviceID.isEmpty {
+            settings.deviceID = UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
+        }
+        downloads = downloadStore.load()
+        downloadFolder = DownloadFolder.resolve()
+        let http = AppModel.makeHTTP(settings)
+        bangumi = BangumiClient(http: http)
+        ruleService = RuleService(http: http)
+        rulesRepo = RuleRepository(http: http)
         rules = snapshot.rules
         favorites = snapshot.favorites
         history = snapshot.history
         selectedWeekday = AnimeCalendar.localWeekday(Date())
         CoverLoader.shared.configure(directory: AppPaths.imageCache)
         CoverLoader.shared.prefetch(history.prefix(8).map(\.imageURL))
+        if snapshot.settings.deviceID.isEmpty { persist() }
+    }
+
+    func sendPlayer(_ command: String) {
+        guard nowPlaying != nil else { return }
+        playerCommand = command
+        playerCommandToken += 1
+    }
+
+    func postNotice(_ text: String) {
+        notice = text
+    }
+
+    func refreshNetwork() {
+        let http = AppModel.makeHTTP(settings)
+        bangumi = BangumiClient(http: http)
+        ruleService = RuleService(http: http)
+        rulesRepo = RuleRepository(http: http)
+    }
+
+    private static func makeHTTP(_ settings: AppSettings) -> HTTPClient {
+        let configuration = URLSessionConfiguration.ephemeral
+        let proxy = ProxyEndpoint(enabled: settings.proxyEnabled, host: settings.proxyHost, port: settings.proxyPort)
+        if proxy.isActive {
+            var dictionary: [AnyHashable: Any] = [:]
+            for (key, value) in proxy.sessionDictionary {
+                if key.hasSuffix("Port"), let port = Int(value) {
+                    dictionary[key] = port
+                } else if key.hasSuffix("Enable") {
+                    dictionary[key] = 1
+                } else {
+                    dictionary[key] = value
+                }
+            }
+            configuration.connectionProxyDictionary = dictionary
+        }
+        return HTTPClient(transport: URLSessionTransport(session: URLSession(configuration: configuration)))
     }
 
     var continueWatching: [HistoryRecord] {
@@ -476,10 +550,18 @@ final class AppModel {
         return await withTaskGroup(of: RuleSearchGroup.self) { group in
             for item in installed {
                 let plugin = item.plugin
+                let cookies = ruleCookies[plugin.name] ?? ""
                 group.addTask {
                     do {
-                        let hits = try await service.search(rule: plugin, keyword: keyword)
+                        var headers: [String: String] = [:]
+                        if !cookies.isEmpty { headers["Cookie"] = cookies }
+                        let hits = try await service.search(rule: plugin, keyword: keyword, extraHeaders: headers)
                         return RuleSearchGroup(ruleName: plugin.name, hits: hits, error: nil)
+                    } catch let error as KazumiError {
+                        if case .captchaRequired(_, let page) = error {
+                            return RuleSearchGroup(ruleName: plugin.name, hits: [], error: error.description, captchaURL: page)
+                        }
+                        return RuleSearchGroup(ruleName: plugin.name, hits: [], error: describe(error))
                     } catch {
                         return RuleSearchGroup(ruleName: plugin.name, hits: [], error: describe(error))
                     }
@@ -489,6 +571,187 @@ final class AppModel {
             for await item in group { groups.append(item) }
             return groups.sorted { $0.ruleName.localizedStandardCompare($1.ruleName) == .orderedAscending }
         }
+    }
+
+    func filteredHistory() -> [HistoryRecord] {
+        LibraryQuery.history(history, query: historyQuery, unfinishedOnly: historyUnfinishedOnly)
+    }
+
+    func loadSubjectExtras(_ id: Int) async {
+        async let people = bangumi.characters(id: id)
+        async let crew = bangumi.staff(id: id)
+        async let notes = bangumi.comments(id: id)
+        subjectCredits[id] = (try? await people) ?? subjectCredits[id] ?? []
+        subjectStaff[id] = (try? await crew) ?? subjectStaff[id] ?? []
+        subjectComments[id] = (try? await notes) ?? subjectComments[id] ?? []
+    }
+
+    func syncCollection(_ id: Int) async {
+        do {
+            try await bangumi.updateCollection(id: id, token: settings.bangumiToken)
+            postNotice("已把收藏状态同步到 Bangumi")
+        } catch {
+            postNotice(describe(error))
+        }
+    }
+
+    func searchByImage() async {
+        let raw = traceQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !raw.isEmpty else { return }
+        traceError = nil
+        do {
+            let response = try await bangumi.http.get(TraceMoe.searchURL(imageURL: raw))
+            guard let json = response.json else { throw KazumiError.message("识图响应无法解析") }
+            traceHits = TraceMoe.parse(json)
+            if traceHits.isEmpty { traceError = "没有识别到番剧" }
+        } catch {
+            traceHits = []
+            traceError = describe(error)
+        }
+    }
+
+    func syncWebDAV() async {
+        let url = settings.webDavURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard settings.webDavEnabled, !url.isEmpty else {
+            postNotice("请先填写并启用 WebDAV")
+            return
+        }
+        syncing = true
+        defer { syncing = false }
+        let client = WebDAVClient(http: bangumi.http, baseURL: url, username: settings.webDavUsername, password: settings.webDavPassword)
+        do {
+            try await client.ensureSyncFolders()
+            let remoteLibrary = try? await client.getData(WebDAVPaths.librarySnapshot)
+            if let remoteLibrary {
+                let decoder = JSONDecoder()
+                decoder.dateDecodingStrategy = .iso8601
+                if let remote = try? decoder.decode(LibrarySyncBundle.self, from: remoteLibrary) {
+                    let merged = LibrarySyncBundle.merge(
+                        local: LibrarySyncBundle(histories: history, favorites: favorites),
+                        remote: remote
+                    )
+                    history = merged.histories
+                    favorites = merged.favorites
+                }
+            }
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            encoder.dateEncodingStrategy = .iso8601
+            let body = try encoder.encode(LibrarySyncBundle(histories: history, favorites: favorites))
+            try await client.put(WebDAVPaths.librarySnapshot, body: body, contentType: "application/json")
+            try await syncShield(client)
+            persist()
+            postNotice("WebDAV 同步完成")
+        } catch {
+            postNotice(describe(error))
+        }
+    }
+
+    private func syncShield(_ client: WebDAVClient) async throws {
+        let now = Int(Date().timeIntervalSince1970 * 1000)
+        var local = settings.danmakuShield.map {
+            ShieldSyncEntry(rule: $0, updatedAt: now, deviceId: settings.deviceID, deleted: false)
+        }
+        if let data = try? await client.getData(WebDAVPaths.shieldFile(deviceID: settings.deviceID)),
+           let text = String(data: data, encoding: .utf8),
+           let remote = try? ShieldSync.decode(text) {
+            local = ShieldSync.merge([remote, local])
+        }
+        let active = ShieldSync.activeRules(local)
+        settings.danmakuShield = active
+        let payload = Data(ShieldSync.encode(local).utf8)
+        try await client.put(WebDAVPaths.shieldFile(deviceID: settings.deviceID), body: payload, contentType: "application/json")
+    }
+
+    func rememberDownloadFolder(_ url: URL) {
+        DownloadFolder.save(url)
+        downloadFolder = url
+        postNotice("下载目录已保存")
+    }
+
+    private var pendingDanmaku: [String: String] = [:]
+
+    func enqueueDownload(title: String, episode: String, url: String, danmakuText: String = "") {
+        let ext = (url as NSString).pathExtension.isEmpty ? "ts" : (url as NSString).pathExtension
+        let name = DownloadNames.fileName(title: title, episode: episode, ext: ext.lowercased().contains("m3u8") ? "ts" : ext)
+        let record = DownloadRecord(title: title, episodeName: episode, sourceURL: url, fileName: name)
+        downloads.insert(record, at: 0)
+        if !danmakuText.isEmpty { pendingDanmaku[record.id] = danmakuText }
+        saveDownloads()
+        postNotice("已加入下载")
+        Task { await runDownload(record.id) }
+    }
+
+    private func runDownload(_ id: String) async {
+        guard let index = downloads.firstIndex(where: { $0.id == id }) else { return }
+        downloads[index].status = "running"
+        saveDownloads()
+        let record = downloads[index]
+        let folder = downloadFolder ?? AppPaths.support.appendingPathComponent("Downloads", isDirectory: true)
+        let scoped = downloadFolder?.startAccessingSecurityScopedResource() ?? false
+        defer { if scoped { downloadFolder?.stopAccessingSecurityScopedResource() } }
+        do {
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            let destination = folder.appendingPathComponent(record.fileName)
+            let http = bangumi.http
+            if record.sourceURL.lowercased().contains(".m3u8") {
+                guard let initialURL = URL(string: record.sourceURL) else {
+                    throw KazumiError.message("下载地址无效")
+                }
+                var playlistURL = initialURL
+                var response = try await http.get(playlistURL.absoluteString)
+                var playlist = HLSPlaylist.parse(response.text, base: playlistURL)
+                if let variant = playlist.variant {
+                    playlistURL = variant
+                    response = try await http.get(variant.absoluteString)
+                    playlist = HLSPlaylist.parse(response.text, base: playlistURL)
+                }
+                var combined = Data()
+                for segment in playlist.segments {
+                    let part = try await http.get(segment.absoluteString)
+                    combined.append(part.data)
+                    if let current = downloads.firstIndex(where: { $0.id == id }) {
+                        downloads[current].receivedBytes = combined.count
+                    }
+                }
+                try combined.write(to: destination, options: .atomic)
+                try writeDanmaku(id, beside: destination)
+            } else {
+                let response = try await http.get(record.sourceURL)
+                try response.data.write(to: destination, options: .atomic)
+                try writeDanmaku(id, beside: destination)
+                if let current = downloads.firstIndex(where: { $0.id == id }) {
+                    downloads[current].receivedBytes = response.data.count
+                }
+            }
+            if let current = downloads.firstIndex(where: { $0.id == id }) {
+                downloads[current].status = "finished"
+                downloads[current].error = ""
+            }
+            postNotice("下载完成：\(record.fileName)")
+        } catch {
+            if let current = downloads.firstIndex(where: { $0.id == id }) {
+                downloads[current].status = "failed"
+                downloads[current].error = describe(error)
+            }
+            postNotice("下载失败")
+        }
+        saveDownloads()
+    }
+
+    private func writeDanmaku(_ id: String, beside video: URL) throws {
+        guard settings.saveDanmakuWithDownload, let text = pendingDanmaku.removeValue(forKey: id), !text.isEmpty else { return }
+        let sidecar = video.deletingPathExtension().appendingPathExtension("danmaku.txt")
+        try text.write(to: sidecar, atomically: true, encoding: .utf8)
+    }
+
+    func deleteDownload(_ id: String) {
+        downloads.removeAll { $0.id == id }
+        saveDownloads()
+    }
+
+    private func saveDownloads() {
+        try? downloadStore.save(downloads)
     }
 
     private func warm(_ subjects: [BangumiSubject]) {
