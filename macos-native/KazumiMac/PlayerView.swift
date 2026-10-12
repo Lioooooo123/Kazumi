@@ -297,6 +297,7 @@ struct VideoSurface: NSViewRepresentable {
     }
 }
 
+@MainActor
 final class PlaybackController {
     let player = AVPlayer()
     var onTick: ((Double, Double) -> Void)?
@@ -307,14 +308,19 @@ final class PlaybackController {
         let item = AVPlayerItem(asset: asset)
         player.replaceCurrentItem(with: item)
         guard observer == nil else { return }
-        observer = player.addPeriodicTimeObserver(
-            forInterval: CMTime(seconds: 0.25, preferredTimescale: 600),
-            queue: .main
-        ) { [weak self] time in
-            let length = self?.player.currentItem?.duration.seconds ?? 0
-            let current = time.seconds
-            self?.onTick?(current.isFinite ? current : 0, length.isFinite ? length : 0)
+        let interval = CMTime(seconds: 0.25, preferredTimescale: 600)
+        // The observer closure is @Sendable. The player is main-actor isolated, and this queue is .main.
+        observer = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] time in
+            let seconds = time.seconds
+            MainActor.assumeIsolated {
+                self?.handleTick(seconds)
+            }
         }
+    }
+
+    private func handleTick(_ seconds: Double) {
+        let length = player.currentItem?.duration.seconds ?? 0
+        onTick?(seconds.isFinite ? seconds : 0, length.isFinite ? length : 0)
     }
 
     func stop() {

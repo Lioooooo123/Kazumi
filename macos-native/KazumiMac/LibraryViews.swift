@@ -1,5 +1,6 @@
 // Kazumi macOS native port. GPL-3.0-or-later. See LICENSE.
 import SwiftUI
+import KazumiCore
 
 struct FavoritesView: View {
     @Environment(AppModel.self) private var model

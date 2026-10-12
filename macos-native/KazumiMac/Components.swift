@@ -158,9 +158,7 @@ struct EmptyHint: View {
     var systemImage: String
 
     var body: some View {
-        ContentUnavailableView(title, systemImage: systemImage, description: {
-            Text(message)
-        })
+        ContentUnavailableView(title, systemImage: systemImage, description: Text(message))
             .frame(maxWidth: .infinity, minHeight: 280)
     }
 }

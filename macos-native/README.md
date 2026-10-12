@@ -108,7 +108,7 @@ swift test
 
 ## 还需要做的
 
-- 在一台 Mac 上用 Xcode 实际编译并点一遍界面。本仓库这次提交时的环境是 Linux，没有做这件事。
+- 在 Mac 上把推荐、时间表、搜索、详情、规则导入、播放和弹幕各点一遍。工程已经能编译并启动，这些交互还没有完整走查。
 - WebView 过验证码，以及 Flutter 版那套视频地址嗅探（含 `useLegacyParser`）。
 - 非 UTF-8 页面。
 - 规则可视化编辑、规则仓库同步。
@@ -118,12 +118,17 @@ swift test
 
 ## 这次验证了什么
 
-在 Linux（Ubuntu 24.04，Swift 6.2）上执行了 `cd macos-native && swift test`。测试覆盖规则解析和数据模型，不访问网络。
+在一台 Mac 上用 **Xcode 27.0 / Swift 6.4 / macOS 27.2** 执行了 `cd macos-native && swift test`（19 个测试通过），并编译运行了 `KazumiMac`。修正两处编译错误后 **BUILD SUCCEEDED**，应用可以启动：
 
-没有验证：
+- 使用 `KazumiCore` 类型的文件需要自己 `import KazumiCore`（Xcode 27 不再让这个导入跨文件可见）。
+- `ContentUnavailableView` 的 `description` 参数是 `Text`，不能再传闭包。
 
-- `KazumiMac.xcodeproj` 能否在 Xcode 里打开并完成签名、编译、运行。
-- SwiftUI 布局、AVKit 播放、弹幕是否跟着进度走。
+同一套核心库也在 Linux（Ubuntu 24.04，Swift 6.2）上用 `swift test` 跑过，并用 `-swift-version 6` 和 `-strict-concurrency=complete` 编译过，没有告警。这次提交另外把播放器进度回调收到主 actor 上，因为 `AVPlayer` 的时间观察器是 `@Sendable` 闭包；这一处还没有在 Mac 上重新编译。
+
+还没有验证：
+
+- 启动之后的页面点击、AVKit 实际播放、弹幕是否跟着进度走。
 - 真实 Bangumi / 弹弹play / 规则站点的网络行为。
+- Xcode 27 编译应用时剩下的告警。这里没有那份告警列表；核心库本身没有并发告警。`AVPlayer`、`NSImage`、`NSCache` 来自系统框架，如果告警集中在它们的 Sendable 标注上，那不是规则引擎的数据竞争。
 
 打开工程后如果本机包解析失败，确认 `macos-native/Package.swift` 和 `KazumiMac.xcodeproj` 在同一层。

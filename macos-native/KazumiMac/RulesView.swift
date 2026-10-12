@@ -1,5 +1,6 @@
 // Kazumi macOS native port. GPL-3.0-or-later. See LICENSE.
 import SwiftUI
+import KazumiCore
 import UniformTypeIdentifiers
 
 struct RulesView: View {
