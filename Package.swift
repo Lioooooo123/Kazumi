@@ -4,6 +4,7 @@ import PackageDescription
 
 let package = Package(
     name: "KazumiNative",
+    platforms: [.macOS(.v14)],
     products: [
         .library(name: "KazumiCore", targets: ["KazumiCore"]),
     ],
