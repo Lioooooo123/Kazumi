@@ -1,210 +1,114 @@
-<div align=center>
+# 小栗子
 
-<h1>Kazumi</h1>
+小栗子是 [Kazumi](https://github.com/Predidit/Kazumi) 的原生 macOS 客户端。界面沿用原项目的信息架构和绿色卡片风格，交互使用 Mac 上的 `NavigationSplitView`、工具栏和 AVKit 播放器。
 
-<img src="assets/images/logo/logo_rounded.png" width=200></img>
+本仓库现在只包含这个 macOS 应用。Finder、程序坞和菜单栏显示名是 **小栗子**。Xcode 目标、scheme 和产品名是 `XiaoLizi`，bundle id 是 `app.xiaolizi.macos`。规则格式、`kazumi://` 和官方 KazumiRules 仓库仍沿用上游名称。核心库模块名仍是 `KazumiCore`。
 
-<a href="https://t.me/kazumi_app"><img src="https://img.shields.io/badge/Telegram-2CA5E0?style=for-the-badge&logo=telegram&logoColor=white"></img></a>
+目标系统是 **macOS 14+**，需要 **Xcode 16+**。播放、弹幕层和窗口使用 SwiftUI / AppKit / AVKit，需要在 Mac 上编译。规则解析、Bangumi 数据模型和本地资料库放在 `KazumiCore` 里，可以在 Linux 上用 Swift 工具链做单元测试。
 
-<img src="https://img.shields.io/badge/Flutter-03A9F4?style=for-the-badge&logo=flutter&logoColor=white"></img>
-<img src="https://img.shields.io/badge/Dart-00B4AB?style=for-the-badge&logo=Dart&logoColor=white"></img>
+本项目采用 **GPL-3.0-or-later**，与 Kazumi 相同。许可证全文见 [LICENSE](LICENSE)。小栗子基于 Kazumi 及其贡献者的作品；版权行和关于页保留这一署名。
 
-<a href="https://trendshift.io/repositories/11432"><img src="https://trendshift.io/api/badge/trendshift/repositories/11432/yearly?language=Dart"></img></a>
-<a href="https://hellogithub.com/repository/Predidit/Kazumi" target="_blank"><img src="https://abroad.hellogithub.com/v1/widgets/recommend.svg?rid=68d824ea55ee4b07aba6fe1dd61ac939&claim_uid=J9Qu6aDd8LT1nU0"/></img></a>
+## 目录
 
-<p>使用 Flutter 开发的基于自定义规则的番剧采集与在线观看程序。使用最多五行基于 <code>Xpath</code> 语法的选择器构建自己的规则。支持规则导入与规则分享。支持基于 <code>Anime4K</code> 的实时超分辨率。绝赞开发中 (～￣▽￣)～</p>
-</div>
-
-## 支持平台
-
-- Android 10 及以上
-- Windows 10 及以上
-- MacOS 10.15 及以上
-- Linux (实验性)
-- iOS 13 及以上 (需要 [侧载](https://kazumi.app/docs/misc/how-to-install-in-ios))
-- HarmonyOS 5.0 及以上 (位于 [分支仓库](https://github.com/ErBWs/Kazumi/releases/latest)，需要 [侧载](https://kazumi.app/docs/misc/how-to-install-in-ohos))
-
-## 屏幕截图
-
-<table>
-  <tr>
-    <td><img alt="homepage" src="static/screenshot/img_1.png"></td>
-    <td><img alt="timetable" src="static/screenshot/img_2.png"></td>
-    <td><img alt="details" src="static/screenshot/img_3.png"></td>
-  <tr>
-  <tr>
-    <td><img alt="selection-page" src="static/screenshot/img_4.png"></td>
-    <td><img alt="rules-mange" src="static/screenshot/img_5.png"></td>
-    <td><img alt="rules-edit" src="static/screenshot/img_6.png"></td>
-  <tr>
-</table>
-
-## 功能 / 开发计划
-
-- [X]  规则编辑器
-- [X]  番剧目录
-- [X]  番剧搜索
-- [X]  番剧时间表
-- [X]  番剧字幕
-- [X]  分集播放
-- [X]  视频播放器
-- [X]  多视频源支持
-- [X]  规则分享
-- [X]  硬件加速
-- [X]  高刷适配
-- [X]  追番列表
-- [X]  番剧弹幕
-- [X]  在线更新
-- [X]  历史记录
-- [X]  倍速播放
-- [X]  配色方案
-- [X]  跨设备同步
-- [X]  无线投屏 (DLNA)
-- [X]  外部播放器播放
-- [X]  超分辨率
-- [X]  一起看
-- [X]  番剧下载
-- [ ]  番剧更新提醒
-- [ ]  还有更多 (/・ω・＼)
-
-## 下载
-
-通过本页面 [Releases](https://github.com/Predidit/Kazumi/releases/latest) 选项卡下载：
-
-<a href="https://github.com/Predidit/Kazumi/releases">
-  <img src="static/svg/get_it_on_github.svg" alt="Get it on Github" width="200"/>
-</a>
-
-### Android
-
-<a href="https://f-droid.org/packages/com.predidit.kazumi">
-  <img src="https://fdroid.gitlab.io/artwork/badge/get-it-on-zh-hans.svg"
-  alt="Get it on F-Droid" width="200">
-</a>
-
-### GNU/Linux
-
-<a href="https://flathub.org/apps/io.github.Predidit.Kazumi">
-  <img src="https://flathub.org/api/badge?svg&locale=zh-Hans" alt="Get it on Flathub" width="175"/>
-</a>
-
-#### Arch Linux
-
-可以从 [AUR](http://aur.archlinux.org) 安装。
-
-##### AUR
-
-```bash
-[yay/paru] -S kazumi # 从源码构建
-[yay/paru] -S kazumi-bin # 二进制包
+```
+├── App/                      SwiftUI 应用（目标 XiaoLizi）
+├── XiaoLizi.xcodeproj        Xcode 工程，scheme 为 XiaoLizi
+├── Package.swift             本地 Swift 包
+├── Sources/KazumiCore/       可在 Linux 编译的核心
+├── Tests/KazumiCoreTests/    单元测试
+├── docs/                     架构和贡献说明
+├── scripts/                  测试和 macOS 构建脚本
+└── .github/workflows/        macOS 上的测试与编译
 ```
 
-## 贡献
+更细的模块划分见 [docs/architecture.md](docs/architecture.md)。
 
-欢迎向我们的 [规则仓库](https://github.com/Predidit/KazumiRules) 提交您的自定义规则。您可以自由选择是否在规则中留下您的ID。详细的规则编写教程可以参考 [规则开发文档](https://kazumi.app/docs/rules/develop-rules)
+## 架构
 
-## Q&A
+`KazumiCore` 负责和界面无关的部分：
 
-<details>
-<summary>使用者 Q&A</summary>
+- 解析 Kazumi 规则 JSON，以及 `kazumi://` 分享链接。字段名与上游一致，包括历史拼写 `muliSources`、`baseURL`。当前规则 API 级别是 8，更高的规则会被拒绝。
+- 官方规则仓库 `index.json`（与上游 `ApiEndpoints.pluginShop` 相同，可选 gitcode 镜像）：跳过坏条目、按段比较版本、拒绝降级和名称不一致的文件。
+- XPath 子集：`//`、`/`、`*`、`@attr`、`text()`、`[@attr='值']`、`[contains(@attr,'值')]`、`[n]`。这覆盖规则编辑器承诺的「以 `//` 开头」的选择器。
+- API 规则：受限 JSONPath（`$`、`.字段`、`[n]`、`[*]`、引号键）、嵌套分集和 `$$$` / `#` / `$` 分隔的分集字符串、`@keyword` 一类模板。
+- 分集 URL 归一化，行为对齐上游 `episode_url`。
+- Bangumi 公开接口：趋势、每日放送、按季度搜索、条目搜索、条目详情、角色、Staff、评论。
+- 弹弹play 评论解析、番剧匹配，以及与上游相同的签名 `base64(sha256(AppId + 时间戳 + 路径 + Secret))`。
+- 追番、历史、规则和设置的 JSON 文件。
+- 封面磁盘缓存，以及从网页里提取 m3u8 / mp4 等直链。
 
-#### Q: 为什么少数番剧中有广告？
+`App/` 把这些接成一个窗口：
 
-A: 本项目未插入任何广告。广告来自视频源, 请不要相信广告中的任何内容, 并尽量选择没有广告的视频源观看。
+| 侧栏 | 作用 |
+| --- | --- |
+| 推荐 | Bangumi 趋势，可按上游那组标签筛选 |
+| 时间表 | 本季 `/p1/calendar`，其他季度走 Bangumi 搜索并按周一到周日分组 |
+| 搜索 | 同时搜 Bangumi 和已启用规则 |
+| 追番 / 历史 | 本机记录 |
+| 下载 | 本机视频文件 |
+| 规则 | 仓库安装和更新，导入 JSON、链接、剪贴板或文件，启用、删除 |
+| 设置 | 外观、播放、弹幕、下载、同步、代理、一起看 |
 
-#### Q: 为什么我启用超分辨率功能后播放卡顿？
+详情页展示封面、评分、标签和简介，并可以用中文名去已启用的规则里找片源。分集页解析线路后进入播放器。播放器盖住整个窗口，用 `AVPlayerView` 播 HLS / MP4，上面叠一层滚动、顶部和底部弹幕。
 
-A: 超分辨率功能对 GPU 性能要求较高, 如果没有在高性能独立显卡上运行 Kazumi, 尽量选择效率档而非质量档。对低分辨率视频源而非高分辨率视频源使用超分也可以降低性能消耗。
+视觉沿用上游：默认种子色是 Material Green `#4CAF50`，封面比例约 0.65，时间表卡片是大圆角横卡，内容区在浅色模式下是淡绿色。侧栏、工具栏和设置表单用系统控件。字体用系统字体（中文是苹方）。图标放在 `App/Assets.xcassets`，由 Yuquanaaa 创作，授权范围与上游项目说明一致。
 
-#### Q: 为什么播放视频时内存占用较高？
+## 构建
 
-A: 本程序在视频播放时, 会尽可能多地缓存视频到内存, 以提供较好的观看体验。如果您的内存较为紧张, 可以在播放设置选项卡启用低内存模式, 这将限制缓存。
+1. 用 Xcode 16 或更新版本打开仓库根目录的 `XiaoLizi.xcodeproj`。
+2. 等它解析本地 Swift 包 `KazumiCore`。包和工程在同一层，工程引用的是 `.`。
+3. 签名选你的 Personal Team，或者 Signing 里选 “Sign to Run Locally”。
+4. 运行 scheme `XiaoLizi`。产物是 `XiaoLizi.app`，最低系统是 macOS 14。
 
-#### Q: 为什么少数番剧无法通过外部播放器观看？
+命令行（关闭代码签名，适合 CI）：
 
-A: 部分视频源的番剧使用了反盗链措施, 这可以被 Kazumi 解决, 但无法被外部播放器解决。
+```bash
+scripts/test.sh
+scripts/build-macos.sh
+```
 
-#### Q: 为什么下载的 Linux 版本缺少图标和托盘功能？
+`scripts/ci.sh` 会先跑测试，再调用 `xcodebuild`。GitHub Actions 在 `macos-latest` 上执行同一脚本。
 
-A: 使用 .deb 版本进行安装, tar.gz 版本仅为方便二次打包, 这一格式先天缺乏图标和托盘功能支持。
+应用沙盒打开了出站网络，以及用户选择文件的读写和书签权限。`Info.plist` 允许任意 HTTP 加载，因为有的规则站点仍然是 http。菜单栏名称和关于面板来自 `CFBundleName` / `CFBundleDisplayName`（小栗子）。
 
-</details>
+数据写在：
 
-<details>
-<summary>规则编写者 Q&A</summary>
+- `~/Library/Application Support/XiaoLizi/library.json`：规则、追番、历史、设置
+- `~/Library/Caches/XiaoLizi/images/`：封面缓存
 
-#### Q: 为什么我的自定义规则无法实现检索？
+命令键：`⌘1` 推荐，`⌘2` 时间表，`⌘F` 搜索，`⌘3` 追番，`⌘4` 历史，`⌘6` 下载，`⌘5` 规则，`⌘,` 设置。播放器里空格播放暂停，左右方向键快进快退 5 秒，`N` 下一集，`F` 全屏，Esc 关闭。没有打开播放器时，这些键不会抢走文本框里的空格。
 
-A: 目前我们对 `Xpath` 语法的支持并不完整, 我们目前只支持以 `//` 开头的选择器。建议参照我们给出的示例规则构建自定义规则。
+## 功能
 
-#### Q: 为什么我的自定义规则可以实现检索, 但不能实现观看？
+| 功能 | 小栗子 |
+| --- | --- |
+| 推荐 / 标签 | 有，走 Bangumi 趋势和搜索 |
+| 番剧日历 | 有，本季放送加历史季度 |
+| Bangumi 搜索和详情 | 有 |
+| 规则 JSON / `kazumi://` / 网址 / 剪贴板导入 | 有。网址会先下载再按 JSON 或 `kazumi://` 解析 |
+| 规则商店：浏览、安装、检查更新 | 有。索引、版本比较和「不降级」与上游一致；规则页显示版本、作者和更新状态 |
+| XPath 搜索和分集 | 有，常见 `//` 子集 |
+| API 规则（嵌套、分隔符、播放页模板） | 有 |
+| 规则编辑器 | 有基础表单：名称、版本、作者、网址、搜索和分集选择器。完整 API 模板仍用 JSON |
+| 验证码 / WebView | 有。验证页用 WKWebView 打开，完成后把 Cookie 带到下一次搜索。自动点按钮和自定义脚本没有移植 |
+| 内置播放器 | AVPlayer，直链和页面里的 m3u8/mp4 |
+| 网页嗅探 | 有。页面里找不到直链时用 WKWebView 收集 video / iframe / 资源地址，并丢掉广告域名。强混淆脚本仍可能拿不到地址 |
+| 弹幕 | 有。按标题匹配作品、按集数匹配分集；滚动弹幕按文字宽度避让。凭据在设置里 |
+| 倍速、续播、下一集 | 有。推荐页有「继续观看」，播完自动下一集，开头 1 秒和结尾 5 秒不续播 |
+| 追番、历史 | 有，本机 JSON。历史可搜索、只看未看完、删除；追番可搜索和取消 |
+| 外观 | 深色、种子色、OLED 纯黑背景。动态取色没有做，使用固定种子色 |
+| 下载、外部播放器 | 有。mp4 直接保存，m3u8 分片拼成一个文件；可交给 IINA、VLC 或浏览器。没有多集队列调度 |
+| 超分辨率 | 播放时可用 Core Image 锐化，分效率和质量两档。完整 Anime4K 需要单独的 Metal 渲染器，这里没有移植 |
+| 一起看、DLNA | 有基础能力。一起看走 Syncplay 的 Hello / State JSON，默认 `syncplay.pl:8996`。DLNA 发 SSDP 搜索并用 SOAP 设置地址后播放。房间事件和设备兼容性都不完整 |
+| WebDAV / Bangumi 同步 | WebDAV 同步历史、追番和弹幕屏蔽词。屏蔽词文档与上游 version 1 格式相同。历史写在 `/kazumiSync/history/macos-library.json`。Bangumi 收藏可在填写令牌后标为在看 |
+| 评论、角色、Staff | 有 |
+| 以图搜番 | 有。把图片网址交给 trace.moe，不上传本地文件 |
+| GBK 网页 | 有。Content-Type 或 HTML meta 声明 GBK / GB18030 / Big5 时用 iconv 解码 |
 
-A: 尝试关闭自定义规则的使用内置播放器选项, 这将尝试使用 `webview` 进行播放, 提高兼容性。但在内置播放器可用时, 建议启用内置播放器, 以获得更加流畅并带有弹幕的观看体验。
+## 验证
 
-</details>
+在一台 Mac 上用 **Xcode 27.0 / Swift 6.4 / macOS 27.2** 编译运行过早期外壳（当时目标名还是 `KazumiMac`）。修正两处编译错误后可以启动：使用 `KazumiCore` 类型的文件需要自己 `import KazumiCore`；`ContentUnavailableView` 的 `description` 必须是 `Text`。
 
-<details>
-<summary>开发者 Q&A</summary>
+核心库在 Linux（Ubuntu 24.04，Swift 6.2）上 `swift test` 为 37 个测试通过，并用 `-swift-version 6` 和 `-strict-concurrency=complete` 编译通过。改名、挪到仓库根目录，以及删掉 Flutter 之后，应用本身还需要在 Xcode 27 上再编一次。GitHub Actions 的 macOS 作业会执行 `scripts/ci.sh`。
 
-#### Q: 我在尝试自行编译该项目, 但编译没有成功。
-
-A: 本项目编译需要良好的网络环境, 除了由 Google 托管的 Flutter 相关依赖外, 本项目同样依赖托管在 MavenCentral/Github/SourceForge 上的资源。如果您位于中国大陆, 可能需要设置恰当的镜像地址。
-
-</details>
-
-## 开发
-
-欢迎您提交 PR！在开始之前, 请阅读 [贡献指引](static/doc/CONTRIBUTING.md) 以了解我们对 PR 和 AI 参与辅助开发的规定。
-
-## 美术资源
-
-本项目图标来自 [Yuquanaaa](https://www.pixiv.net/users/66219277) 发表在 [Pixiv](https://www.pixiv.net/artworks/116666979) 上的作品。
-
-此图标由其原作者 [Yuquanaaa](https://www.pixiv.net/users/66219277) 拥有版权。我们已获得原作者的授权和许可, 可以在本项目中使用这一图标。这一图标不是自由使用的, 未经原作者明确授权, 任何人不得擅自使用、复制、修改或分发这一图标。
-
-本项目内嵌字体为 [Mi Sans](https://hyperos.mi.com/font/zh/details/sc/) 字体, 由 [Xiaomi](https://www.mi.com/index.html) 开发和拥有版权。
-
-## 免责声明
-
-本项目基于 GNU 通用公共许可证第 3 版（GPL-3.0）授权。我们不对其适用性、可靠性或准确性作出任何明示或暗示的保证。在法律允许的最大范围内, 作者和贡献者不承担任何因使用本软件而产生的直接、间接、偶然、特殊或后果性的损害赔偿责任。
-
-使用本项目需遵守所在地法律法规, 不得进行任何侵犯第三方知识产权的行为。因使用本项目而产生的数据和缓存应在24小时内清除, 超出 24 小时的使用需获得相关权利人的授权。
-
-## 隐私政策
-
-我们不收集任何用户数据, 不使用任何遥测组件。
-
-## 代码签名策略
-
-提交者: [贡献者](https://github.com/Predidit/Kazumi/graphs/contributors)
-审阅者: [所有者](https://github.com/Predidit)
-
-## 赞助
-
-
-| ![signpath](https://signpath.org/assets/favicon-50x50.png)                                                                                                                      | Free code signing on Windows provided by[SignPath.io](https://about.signpath.io/), certficate by [SignPath Foundation](https://signpath.org/) |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| <img src="https://kilo.ai/favicon/favicon.svg" width="50">                                                                                                                      | **Automatic PR review provided by [Kilo Code](https://kilo.ai/), sponsored by the [Kilo OSS Program](https://kilo.ai/oss)**                   |
-| <a href="https://m.do.co/c/0062035db3e4"><img src="https://opensource.nyc3.cdn.digitaloceanspaces.com/attribution/assets/SVG/DO_Logo_icon_blue.svg" width="50" height="50"></a> | **Cloud infrastructure is supported by [DigitalOcean](https://m.do.co/c/0062035db3e4)**                                                       |
-
-## 致谢
-
-特别感谢 [XpathSelector](https://github.com/simonkimi/xpath_selector) 这个优秀的项目是本项目的基石。
-
-特别感谢 [弹弹play](https://www.dandanplay.com/) 本项目使用了 弹弹play开放平台 以提供弹幕交互。
-
-特别感谢 [Bangumi](https://bangumi.tv/) 本项目使用了 Bangumi 开放 API 以提供番剧元数据。
-
-特别感谢 [Anime4K](https://github.com/bloc97/Anime4K) 本项目使用 Anime4K 进行实时超分。
-
-特别感谢 [SyncPlay](https://github.com/Syncplay/syncplay) 本项目使用 SyncPlay 协议并通过 SyncPlay 公共服务器实现一起看功能。
-
-特别感谢 [所有贡献者](https://github.com/Predidit/Kazumi/graphs/contributors) 本项目因为你们变得更好。
-
-特别感谢 [trace.moe](https://trace.moe) 本项目使用了 trace.moe 提供的图片识别番剧功能。
-
-感谢 [media-kit](https://github.com/media-kit/media-kit) 本项目跨平台媒体播放能力来自 media-kit。
-
-感谢 [avbuild](https://github.com/wang-bin/avbuild) 本项目使用了来自 avbuild 的树外补丁实现非标准视频流播放。
-
-感谢 [hive](https://github.com/isar/hive) 本项目持久化储存能力来自 hive。
+还没有在本机点过：启动之后的页面、AVKit 实际播放、弹幕是否跟着进度走，以及真实 Bangumi / 弹弹play / 规则站点。
