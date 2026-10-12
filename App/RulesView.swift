@@ -1,7 +1,7 @@
 // Kazumi macOS native port. GPL-3.0-or-later. See LICENSE.
 import AppKit
-import SwiftUI
 import KazumiCore
+import SwiftUI
 import UniformTypeIdentifiers
 
 struct RulesView: View {
@@ -14,19 +14,45 @@ struct RulesView: View {
     @State private var message = ""
     @State private var importing = false
     @State private var editing: PluginRule?
+    @State private var section = RuleSection.installed
+
+    private enum RuleSection: String, CaseIterable {
+        case installed = "已安装"
+        case catalog = "规则仓库"
+        case importRules = "导入"
+    }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 28) {
-                catalogSection
-                importSection
-                installedSection
+                Picker("规则页面", selection: $section) {
+                    ForEach(RuleSection.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .accessibilityLabel("规则页面")
+                .frame(maxWidth: 360)
+                switch section {
+                case .installed: installedSection
+                case .catalog: catalogSection
+                case .importRules: importSection
+                }
+                if !message.isEmpty {
+                    Label(message, systemImage: "info.circle")
+                        .font(.callout).foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                }
             }
-            .padding(20)
-            .frame(maxWidth: 860, alignment: .leading)
+            .padding(KazumiTheme.pagePadding)
+            .frame(maxWidth: 900, alignment: .leading)
+            .frame(maxWidth: .infinity)
         }
         .navigationTitle("规则")
         .toolbar {
+            ToolbarItem {
+                Button("导入", systemImage: "square.and.arrow.down") { section = .importRules }
+                    .help("导入规则")
+            }
             ToolbarItem {
                 Button("新建规则") { editing = PluginRule.blank() }
                     .accessibilityLabel("新建规则")
@@ -40,7 +66,8 @@ struct RulesView: View {
             }
         }
         .task { await model.refreshCatalog() }
-        .fileImporter(isPresented: $importing, allowedContentTypes: [.json, .plainText, .text]) { result in
+        .fileImporter(isPresented: $importing, allowedContentTypes: [.json, .plainText, .text]) {
+            result in
             switch result {
             case .success(let url):
                 let accessed = url.startAccessingSecurityScopedResource()
@@ -74,7 +101,7 @@ struct RulesView: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("规则仓库")
                 .font(.title3.weight(.semibold))
-            Text("浏览 Kazumi 官方规则仓库，一键安装，并在有新版本时更新。版本号按段比较，不会用旧版本覆盖本地规则。")
+            Text("选择规则并安装，即可搜索对应网站的片源。已安装的规则会显示更新状态。")
                 .font(.callout)
                 .foregroundStyle(.secondary)
             if let progress = catalogProgress {
@@ -85,17 +112,23 @@ struct RulesView: View {
                 }
                 .padding(10)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .background(
+                    Color.accentColor.opacity(0.12),
+                    in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+                )
                 .accessibilityLabel(progress)
             }
             HStack {
-                Toggle("使用规则镜像", isOn: Binding(
-                    get: { model.settings.useRuleMirror },
-                    set: { enabled in
-                        model.updateSettings { $0.useRuleMirror = enabled }
-                        Task { await model.refreshCatalog() }
-                    }
-                ))
+                Toggle(
+                    "使用规则镜像",
+                    isOn: Binding(
+                        get: { model.settings.useRuleMirror },
+                        set: { enabled in
+                            model.updateSettings { $0.useRuleMirror = enabled }
+                            Task { await model.refreshCatalog() }
+                        }
+                    )
+                )
                 .toggleStyle(.switch)
                 Spacer()
                 Button("全部更新") {
@@ -121,6 +154,8 @@ struct RulesView: View {
                     Text("可更新 \(updateCount)").tag(RuleCatalogFilter.updates)
                 }
                 .pickerStyle(.segmented)
+                .labelsHidden()
+                .accessibilityLabel("规则筛选")
                 Picker("排序", selection: $sort) {
                     Text("最近更新").tag(RuleCatalogSort.lastUpdate)
                     Text("名称").tag(RuleCatalogSort.name)
@@ -159,11 +194,15 @@ struct RulesView: View {
     }
 
     private var installedCount: Int {
-        model.catalog.filter { RuleUpdates.itemStatus(item: $0, installed: installedPlugins) != .install }.count
+        model.catalog.filter {
+            RuleUpdates.itemStatus(item: $0, installed: installedPlugins) != .install
+        }.count
     }
 
     private var updateCount: Int {
-        model.catalog.filter { RuleUpdates.itemStatus(item: $0, installed: installedPlugins) == .update }.count
+        model.catalog.filter {
+            RuleUpdates.itemStatus(item: $0, installed: installedPlugins) == .update
+        }.count
     }
 
     private var catalogProgress: String? {
@@ -190,7 +229,7 @@ struct RulesView: View {
     }
 
     private func catalogMeta(_ item: RuleCatalogItem) -> String {
-        var parts = ["v\(item.version)", "作者 · \(item.author.isEmpty ? "未知" : item.author)"]
+        var parts = ["v\(item.version)", item.author.isEmpty ? "未知作者" : item.author]
         if let date = item.updatedAt {
             parts.append("更新于 \(Self.dayFormatter.string(from: date))")
         }
@@ -222,7 +261,7 @@ struct RulesView: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("导入")
                 .font(.title3.weight(.semibold))
-            Text("可以粘贴规则 JSON、kazumi:// 链接，或填一个规则文件的网址。剪贴板里的内容走同一条导入。")
+            Text("从文件、剪贴板或网址导入 Kazumi 规则。")
                 .font(.callout)
                 .foregroundStyle(.secondary)
             HStack {
@@ -234,15 +273,10 @@ struct RulesView: View {
             HStack {
                 Button("从剪贴板导入") { importClipboard() }
                 Button("从文件导入") { importing = true }
-                if !message.isEmpty {
-                    Text(message)
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .textSelection(.enabled)
-                }
             }
             TextEditor(text: $pasted)
-                .font(.system(size: 12, design: .monospaced))
+                .font(.callout.monospaced())
+                .accessibilityLabel("规则 JSON 或分享链接")
                 .frame(minHeight: 120)
                 .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.primary.opacity(0.12)))
             Button("导入文本") { submit(pasted) { pasted = "" } }
@@ -252,10 +286,13 @@ struct RulesView: View {
 
     private var installedSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("已安装")
-                .font(.title3.weight(.semibold))
+            SectionHeading(
+                title: "已安装", subtitle: "\(model.rules.count) 条规则，\(model.enabledRules.count) 条已启用")
             if model.rules.isEmpty {
-                EmptyHint(title: "没有规则", message: "从上面的仓库安装，或导入 JSON / kazumi:// 链接。", systemImage: "puzzlepiece.extension")
+                EmptyHint(
+                    title: "还没有片源规则", message: "安装规则后，就能在搜索和详情页查找视频。", systemImage: "puzzlepiece.extension",
+                    retryTitle: "浏览规则仓库"
+                ) { section = .catalog }
             } else {
                 ForEach(model.rules) { installed in
                     installedRow(installed)
@@ -266,7 +303,8 @@ struct RulesView: View {
 
     private func installedRow(_ installed: InstalledRule) -> some View {
         let plugin = installed.plugin
-        let availability = RuleUpdates.availability(plugin: plugin, catalog: model.catalog, loaded: model.catalogLoaded)
+        let availability = RuleUpdates.availability(
+            plugin: plugin, catalog: model.catalog, loaded: model.catalogLoaded)
         let author = RuleUpdates.displayAuthor(plugin: plugin, catalog: model.catalog)
         return HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
@@ -292,26 +330,34 @@ struct RulesView: View {
                     .disabled(model.updatingAllRules)
                 }
             }
-            Toggle("启用", isOn: Binding(
-                get: { installed.enabled },
-                set: { model.setRuleEnabled(installed.id, $0) }
-            ))
+            Toggle(
+                "启用",
+                isOn: Binding(
+                    get: { installed.enabled },
+                    set: { model.setRuleEnabled(installed.id, $0) }
+                )
+            )
             .toggleStyle(.switch)
+            .accessibilityLabel("启用 \(plugin.name)")
             Button(role: .destructive) {
                 model.deleteRule(installed.id)
             } label: {
                 Image(systemName: "trash")
             }
             .buttonStyle(.borderless)
+            .help("删除 \(plugin.name)")
+            .accessibilityLabel("删除 \(plugin.name)")
         }
-        .padding(12)
+        .padding(16)
         .background(.background, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
-    private func installedMeta(_ plugin: PluginRule, author: String, availability: RuleUpdateAvailability) -> String {
+    private func installedMeta(
+        _ plugin: PluginRule, author: String, availability: RuleUpdateAvailability
+    ) -> String {
         let version = plugin.version.isEmpty ? "-" : plugin.version
         let authorText = author.isEmpty ? "未知" : author
-        return "v\(version) · 作者 · \(authorText) · \(availability.title) · 搜索 \(plugin.searchMode) · 分集 \(plugin.chapterMode)"
+        return "v\(version) · \(authorText) · \(availability.title)"
     }
 
     private func importClipboard() {

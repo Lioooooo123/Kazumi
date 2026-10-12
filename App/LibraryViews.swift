@@ -1,11 +1,11 @@
 // Kazumi macOS native port. GPL-3.0-or-later. See LICENSE.
-import SwiftUI
 import KazumiCore
+import SwiftUI
 
 struct FavoritesView: View {
     @Environment(AppModel.self) private var model
     @State private var query = ""
-    private let columns = [GridItem(.adaptive(minimum: 148, maximum: 190), spacing: 12)]
+    private let columns = KazumiTheme.posterColumns
 
     private var visible: [FavoriteRecord] {
         let needle = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -16,39 +16,46 @@ struct FavoritesView: View {
     var body: some View {
         Group {
             if model.favorites.isEmpty {
-                EmptyHint(title: "还没有追番", message: "在番剧详情页点「追番」，会记在这台 Mac 上。", systemImage: "heart")
+                EmptyHint(
+                    title: "还没有追番", message: "在番剧详情页选择「追番」，就能在这里找到。", systemImage: "heart", retryTitle: "浏览推荐"
+                ) { model.sidebar = .popular }
             } else {
                 ScrollView {
-                    TextField("搜索追番", text: $query)
-                        .textFieldStyle(.roundedBorder)
-                        .accessibilityLabel("搜索追番")
-                        .padding(.horizontal, 20)
-                        .padding(.top, 16)
-                    if visible.isEmpty {
-                        ContentUnavailableView("没有符合条件的追番", systemImage: "magnifyingglass", description: Text("换一个关键词。"))
+                    VStack(alignment: .leading, spacing: 20) {
+                        SectionHeading(title: "我的追番", subtitle: "\(model.favorites.count) 部番剧")
+                        TextField("搜索追番", text: $query)
+                            .textFieldStyle(.roundedBorder)
+                            .accessibilityLabel("搜索追番")
+                            .frame(maxWidth: 320)
+                        if visible.isEmpty {
+                            ContentUnavailableView(
+                                "没有符合条件的追番", systemImage: "magnifyingglass", description: Text("换一个关键词。")
+                            )
                             .frame(minHeight: 180)
-                    }
-                    LazyVGrid(columns: columns, spacing: 12) {
-                        ForEach(visible) { item in
-                            Button {
-                                if let subject = model.subject(id: item.subjectID) {
-                                    model.open(subject)
-                                } else {
-                                    model.path.append(AppRoute.detail(item.subjectID))
+                        }
+                        LazyVGrid(columns: columns, spacing: KazumiTheme.cardSpacing) {
+                            ForEach(visible) { item in
+                                Button {
+                                    if let subject = model.subject(id: item.subjectID) {
+                                        model.open(subject)
+                                    } else {
+                                        model.path.append(AppRoute.detail(item.subjectID))
+                                    }
+                                } label: {
+                                    FavoriteCard(item: item)
                                 }
-                            } label: {
-                                FavoriteCard(item: item)
-                            }
-                            .buttonStyle(.plain)
-                            .hoverLift()
-                            .accessibilityLabel(item.displayName)
-                            .accessibilityHint("打开详情")
-                            .contextMenu {
-                                Button("取消追番", role: .destructive) { model.removeFavorite(item.subjectID) }
+                                .buttonStyle(ContentButtonStyle())
+                                .accessibilityLabel(item.displayName)
+                                .accessibilityHint("打开详情")
+                                .contextMenu {
+                                    Button("取消追番", role: .destructive) { model.removeFavorite(item.subjectID) }
+                                }
                             }
                         }
                     }
-                    .padding(20)
+                    .padding(KazumiTheme.pagePadding)
+                    .frame(maxWidth: KazumiTheme.pageWidth, alignment: .leading)
+                    .frame(maxWidth: .infinity)
                 }
             }
         }
@@ -61,19 +68,15 @@ struct FavoriteCard: View {
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            CoverImage(url: item.imageURL)
-                .aspectRatio(0.65, contentMode: .fill)
-                .frame(maxWidth: .infinity)
-                .clipped()
+        VStack(alignment: .leading, spacing: 10) {
+            PosterArtwork(url: item.imageURL)
             Text(item.displayName)
-                .font(.system(size: 13, weight: .medium))
-                .lineLimit(2)
-                .padding(8)
-                .frame(maxWidth: .infinity, minHeight: 48, alignment: .topLeading)
+                .font(.headline)
+                .foregroundStyle(.primary)
+                .lineLimit(2, reservesSpace: true)
+                .multilineTextAlignment(.leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .background(KazumiTheme.card(scheme))
-        .clipShape(RoundedRectangle(cornerRadius: KazumiTheme.cardRadius, style: .continuous))
     }
 }
 
@@ -88,18 +91,18 @@ struct ContinueCard: View {
                 .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             VStack(alignment: .leading, spacing: 4) {
                 Text(item.displayName)
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.headline)
                     .lineLimit(2)
                 Text(item.episodeName)
-                    .font(.system(size: 11))
+                    .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                 ProgressView(value: item.progress)
             }
             Spacer(minLength: 0)
         }
-        .padding(8)
-        .frame(width: 240, alignment: .leading)
+        .padding(12)
+        .frame(width: 272, alignment: .leading)
         .background(KazumiTheme.card(scheme))
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
@@ -114,7 +117,9 @@ struct HistoryView: View {
         let rows = model.filteredHistory()
         Group {
             if model.history.isEmpty {
-                EmptyHint(title: "没有播放记录", message: "开始播放后，进度会记在本地。", systemImage: "clock")
+                EmptyHint(
+                    title: "还没有播放记录", message: "开始观看后，可以在这里继续播放。", systemImage: "clock", retryTitle: "搜索番剧"
+                ) { model.sidebar = .search }
             } else {
                 VStack(spacing: 0) {
                     HStack {
@@ -124,41 +129,45 @@ struct HistoryView: View {
                         Toggle("只看未看完", isOn: $model.historyUnfinishedOnly)
                             .toggleStyle(.checkbox)
                     }
-                    .padding(12)
+                    .padding(KazumiTheme.pagePadding)
                     if rows.isEmpty {
-                        ContentUnavailableView("没有符合条件的记录", systemImage: "line.3.horizontal.decrease.circle", description: Text("换一个关键词，或关掉未看完筛选。"))
+                        ContentUnavailableView(
+                            "没有符合条件的记录", systemImage: "line.3.horizontal.decrease.circle",
+                            description: Text("换一个关键词，或关掉未看完筛选。"))
                     } else {
-                List {
-                    ForEach(rows) { item in
-                        Button {
-                            model.play(model.playback(from: item))
-                        } label: {
-                            HStack(spacing: 12) {
-                                CoverImage(url: item.imageURL)
-                                    .frame(width: 54, height: 76)
-                                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(item.displayName).font(.body.weight(.medium))
-                                    Text(item.episodeName).font(.callout).foregroundStyle(.secondary)
-                                    HStack(spacing: 8) {
-                                        ProgressView(value: item.progress)
-                                            .frame(maxWidth: 220)
-                                        Text("\(Int((item.progress * 100).rounded()))%")
-                                            .font(.caption.monospacedDigit())
-                                            .foregroundStyle(.secondary)
+                        List {
+                            ForEach(rows) { item in
+                                Button {
+                                    model.play(model.playback(from: item))
+                                } label: {
+                                    HStack(spacing: 12) {
+                                        CoverImage(url: item.imageURL)
+                                            .frame(width: 54, height: 76)
+                                            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                                        VStack(alignment: .leading, spacing: 4) {
+                                            Text(item.displayName).font(.body.weight(.medium))
+                                            Text(item.episodeName).font(.callout).foregroundStyle(.secondary)
+                                            HStack(spacing: 8) {
+                                                ProgressView(value: item.progress)
+                                                    .frame(maxWidth: 220)
+                                                Text("\(Int((item.progress * 100).rounded()))%")
+                                                    .font(.caption.monospacedDigit())
+                                                    .foregroundStyle(.secondary)
+                                            }
+                                        }
+                                        Spacer()
                                     }
+                                    .contentShape(Rectangle())
                                 }
-                                Spacer()
+                                .buttonStyle(ContentButtonStyle())
+                                .accessibilityLabel(
+                                    "\(item.displayName)，\(item.episodeName)，已看 \(Int((item.progress * 100).rounded()))%"
+                                )
+                                .contextMenu {
+                                    Button("删除", role: .destructive) { model.removeHistory(item.id) }
+                                }
                             }
-                            .contentShape(Rectangle())
                         }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("\(item.displayName)，\(item.episodeName)，已看 \(Int((item.progress * 100).rounded()))%")
-                        .contextMenu {
-                            Button("删除", role: .destructive) { model.removeHistory(item.id) }
-                        }
-                    }
-                }
                     }
                 }
             }

@@ -1,19 +1,19 @@
 // Kazumi macOS native port. GPL-3.0-or-later. See LICENSE.
+import KazumiCore
 import SwiftUI
 import UniformTypeIdentifiers
-import KazumiCore
 
 struct DownloadsView: View {
     @Environment(AppModel.self) private var model
     @State private var picking = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 0) {
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("下载目录")
                         .font(.headline)
-                    Text(model.downloadFolder?.path ?? "尚未选择，会先写到应用支持目录")
+                    Text(model.downloadFolder?.path ?? "应用默认目录")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .textSelection(.enabled)
@@ -22,8 +22,11 @@ struct DownloadsView: View {
                 Button("选择目录") { picking = true }
                     .accessibilityLabel("选择下载目录")
             }
+            .padding(KazumiTheme.pagePadding)
+            Divider()
             if model.downloads.isEmpty {
-                EmptyHint(title: "没有下载", message: "播放时点下载。mp4 直接保存，m3u8 会把分片拼成一个文件。", systemImage: "arrow.down.circle")
+                EmptyHint(
+                    title: "还没有下载", message: "在播放器中选择「下载」，将视频保存到本机。", systemImage: "arrow.down.circle")
             } else {
                 if activeCount > 0 {
                     HStack(spacing: 8) {
@@ -31,7 +34,7 @@ struct DownloadsView: View {
                         Text("正在处理 \(activeCount) 个任务")
                             .font(.callout)
                     }
-                    .padding(.horizontal, 8)
+                    .padding(16)
                     .accessibilityLabel("正在处理 \(activeCount) 个下载")
                 }
                 List {
@@ -70,7 +73,6 @@ struct DownloadsView: View {
                 }
             }
         }
-        .padding(model.downloads.isEmpty ? 0 : 8)
         .navigationTitle("下载")
         .fileImporter(isPresented: $picking, allowedContentTypes: [.folder]) { result in
             if case .success(let url) = result {

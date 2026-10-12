@@ -1,25 +1,43 @@
 // Kazumi macOS native port. GPL-3.0-or-later. See LICENSE.
-import SwiftUI
 import KazumiCore
+import SwiftUI
 
 struct SearchView: View {
     @Environment(AppModel.self) private var model
     @FocusState private var queryFocused: Bool
-    private let columns = [GridItem(.adaptive(minimum: 148, maximum: 190), spacing: KazumiTheme.cardSpacing)]
+    @State private var lastSubmittedQuery = ""
+    private let columns = KazumiTheme.posterColumns
 
     var body: some View {
         @Bindable var model = model
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                HStack(spacing: 8) {
-                    TextField("搜索番剧、角色或片源", text: $model.searchQuery)
-                        .textFieldStyle(.roundedBorder)
-                        .focused($queryFocused)
-                        .accessibilityLabel("搜索番剧、角色或片源")
-                        .onSubmit { Task { await model.search() } }
-                    Button("搜索") { Task { await model.search() } }
+                SectionHeading(title: "找一部想看的番剧", subtitle: "同时搜索番剧资料和已启用的片源")
+                HStack(spacing: 12) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                        TextField("番剧名称或片源关键词", text: $model.searchQuery)
+                            .textFieldStyle(.plain)
+                            .focused($queryFocused)
+                            .accessibilityLabel("搜索番剧或片源")
+                            .onSubmit { runSearch() }
+                    }
+                    .padding(12)
+                    .background(.background, in: RoundedRectangle(cornerRadius: 10))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 10)
+                            .strokeBorder(
+                                queryFocused ? Color.accentColor : Color.secondary.opacity(0.3),
+                                lineWidth: queryFocused ? 2 : 1)
+                    }
+                    Button("搜索") { runSearch() }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.large)
                         .keyboardShortcut(.defaultAction)
-                        .disabled(model.searching || model.searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        .disabled(
+                            model.searching
+                                || model.searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        )
                         .accessibilityLabel("开始搜索")
                 }
                 DisclosureGroup("以图搜番") {
@@ -37,9 +55,12 @@ struct SearchView: View {
                     }
                 }
                 if model.enabledRules.isEmpty {
-                    Text("还没有启用的规则。Bangumi 资料可以搜索；片源需要在「规则」页导入 Kazumi JSON 或 kazumi:// 链接。")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
+                    HStack {
+                        Label("安装规则后可搜索播放来源", systemImage: "puzzlepiece.extension")
+                            .font(.callout).foregroundStyle(.secondary)
+                        Spacer()
+                        Button("前往规则") { model.sidebar = .rules }
+                    }
                 }
                 if model.searching && model.searchBangumi.isEmpty && model.searchGroups.isEmpty {
                     HStack(spacing: 8) {
@@ -49,24 +70,41 @@ struct SearchView: View {
                             .foregroundStyle(.secondary)
                     }
                     .accessibilityLabel("正在搜索")
-                } else if let error = model.searchError, model.searchBangumi.isEmpty, model.searchGroups.isEmpty {
+                } else if let error = model.searchError, model.searchBangumi.isEmpty,
+                    model.searchGroups.isEmpty
+                {
                     EmptyHint(title: "搜索失败", message: error, systemImage: "magnifyingglass") {
                         Task { await model.search() }
                     }
-                } else if !model.searching, model.searchBangumi.isEmpty, model.searchGroups.isEmpty, model.searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    EmptyHint(title: "搜索番剧", message: "输入名字后回车。Bangumi 资料和已启用规则会一起查。", systemImage: "magnifyingglass")
+                } else if !model.searching, model.searchBangumi.isEmpty, model.searchGroups.isEmpty,
+                    model.searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                {
+                    EmptyHint(
+                        title: "输入番剧名称", message: "回车即可搜索，也可以展开「以图搜番」识别截图。", systemImage: "magnifyingglass")
+                } else if !model.searching, model.searchBangumi.isEmpty, model.searchGroups.isEmpty,
+                    !lastSubmittedQuery.isEmpty,
+                    lastSubmittedQuery == model.searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+                {
+                    EmptyHint(
+                        title: "没有找到匹配的番剧", message: "试试中文名、原名，或更短的关键词。", systemImage: "magnifyingglass")
                 }
-                if let error = model.searchError, !model.searchBangumi.isEmpty || !model.searchGroups.isEmpty {
+                if let error = model.searchError,
+                    !model.searchBangumi.isEmpty || !model.searchGroups.isEmpty
+                {
                     Text(error).foregroundStyle(.red).font(.callout)
                 }
-                LoadingBar(active: model.searching && (!model.searchBangumi.isEmpty || !model.searchGroups.isEmpty))
+                LoadingBar(
+                    active: model.searching && (!model.searchBangumi.isEmpty || !model.searchGroups.isEmpty))
                 if !model.searchBangumi.isEmpty {
-                    Text("Bangumi")
-                        .font(.title3.weight(.semibold))
+                    SectionHeading(title: "番剧资料", subtitle: "Bangumi · \(model.searchBangumi.count) 个结果")
                     LazyVGrid(columns: columns, spacing: KazumiTheme.cardSpacing) {
                         ForEach(model.searchBangumi) { subject in
-                            Button { model.open(subject) } label: { BangumiCard(subject: subject) }
-                                .buttonStyle(.plain)
+                            Button {
+                                model.open(subject)
+                            } label: {
+                                BangumiCard(subject: subject)
+                            }
+                            .buttonStyle(ContentButtonStyle())
                         }
                     }
                 }
@@ -87,14 +125,16 @@ struct SearchView: View {
                         } else {
                             ForEach(group.hits) { hit in
                                 Button {
-                                    model.path.append(AppRoute.episodes(EpisodeRoute(
-                                        ruleName: group.ruleName,
-                                        title: hit.name,
-                                        source: hit.source,
-                                        subjectID: 0,
-                                        subjectName: hit.name,
-                                        coverURL: ""
-                                    )))
+                                    model.path.append(
+                                        AppRoute.episodes(
+                                            EpisodeRoute(
+                                                ruleName: group.ruleName,
+                                                title: hit.name,
+                                                source: hit.source,
+                                                subjectID: 0,
+                                                subjectName: hit.name,
+                                                coverURL: ""
+                                            )))
                                 } label: {
                                     HStack {
                                         VStack(alignment: .leading, spacing: 2) {
@@ -105,21 +145,26 @@ struct SearchView: View {
                                         Image(systemName: "chevron.right").foregroundStyle(.tertiary)
                                     }
                                     .padding(10)
-                                    .background(.background, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                                    .background(
+                                        .background, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                                 }
-                                .buttonStyle(.plain)
-                                .hoverLift()
+                                .buttonStyle(ContentButtonStyle())
                             }
                         }
                     }
                 }
             }
-            .padding(20)
+            .padding(KazumiTheme.pagePadding)
             .frame(maxWidth: KazumiTheme.pageWidth, alignment: .leading)
             .frame(maxWidth: .infinity)
         }
         .navigationTitle("搜索")
         .onAppear { queryFocused = true }
+    }
+
+    private func runSearch() {
+        lastSubmittedQuery = model.searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        Task { await model.search() }
     }
 }
 
@@ -158,9 +203,11 @@ struct EpisodesView: View {
                 ForEach(roads) { road in
                     VStack(alignment: .leading, spacing: 8) {
                         Text(road.name).font(.headline)
-                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 88, maximum: 140), spacing: 8)], spacing: 8) {
-                            ForEach(road.episodes) { episode in
-                                Button(episode.name) {
+                        LazyVGrid(
+                            columns: [GridItem(.adaptive(minimum: 144, maximum: 220), spacing: 12)], spacing: 12
+                        ) {
+                            ForEach(Array(road.episodes.enumerated()), id: \.element.id) { index, episode in
+                                Button {
                                     let subject = model.subject(id: route.subjectID)
                                     let request = model.playback(
                                         ruleName: route.ruleName,
@@ -176,16 +223,29 @@ struct EpisodesView: View {
                                         playback.subjectID = route.subjectID
                                     }
                                     model.play(playback)
+                                } label: {
+                                    VStack(alignment: .leading, spacing: 5) {
+                                        Text("第 \(index + 1) 集").font(.headline)
+                                        Text(episode.name).font(.caption)
+                                            .lineLimit(2, reservesSpace: true)
+                                            .multilineTextAlignment(.leading)
+                                    }
+                                    .frame(maxWidth: .infinity, minHeight: 64, alignment: .leading)
                                 }
                                 .buttonStyle(.bordered)
-                                .controlSize(.small)
+                                .buttonBorderShape(.roundedRectangle(radius: KazumiTheme.cardRadius))
+                                .controlSize(.large)
+                                .accessibilityLabel("第 \(index + 1) 集，\(episode.name)")
+                                .help(episode.name)
+                                .accessibilityHint("播放这一集")
                             }
                         }
                     }
                 }
             }
-            .padding(20)
+            .padding(KazumiTheme.pagePadding)
             .frame(maxWidth: 980, alignment: .leading)
+            .frame(maxWidth: .infinity)
         }
         .navigationTitle("分集")
         .task { await load() }

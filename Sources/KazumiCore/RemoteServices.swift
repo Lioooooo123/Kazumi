@@ -11,7 +11,9 @@ public enum LegacySniff {
         let value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         let lower = value.lowercased()
         guard lower.hasPrefix("http://") || lower.hasPrefix("https://") || lower.hasPrefix("//") else { return false }
-        return !blockedFragments.contains { lower.contains($0) }
+        guard !blockedFragments.contains(where: { lower.contains($0) }),
+              let url = URL(string: value.hasPrefix("//") ? "https:" + value : value) else { return false }
+        return MediaSniffer.isDirect(url)
     }
 
     /// Pulls playlist and media URLs out of a response body, including `#EXTM3U`.
@@ -20,7 +22,7 @@ public enum LegacySniff {
         var seen = Set<String>()
         func add(_ raw: String) {
             let value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard accepts(value) || value.lowercased().contains(".m3u8") || value.lowercased().contains(".mp4") else { return }
+            guard accepts(value) else { return }
             guard seen.insert(value).inserted else { return }
             found.append(value)
         }

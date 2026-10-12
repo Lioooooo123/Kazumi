@@ -4,6 +4,7 @@ import SwiftUI
 struct RootView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.colorScheme) private var scheme
+    @State private var navigationPaths: [SidebarItem: NavigationPath] = [:]
 
     var body: some View {
         @Bindable var model = model
@@ -14,7 +15,7 @@ struct RootView: View {
                     Label("时间表", systemImage: "calendar").tag(SidebarItem.timeline)
                     Label("搜索", systemImage: "magnifyingglass").tag(SidebarItem.search)
                 }
-                Section("收藏") {
+                Section("资料库") {
                     Label("追番", systemImage: "heart").tag(SidebarItem.favorites)
                     Label("历史", systemImage: "clock.arrow.circlepath").tag(SidebarItem.history)
                     Group {
@@ -29,7 +30,8 @@ struct RootView: View {
                 }
                 Section {
                     Label("规则", systemImage: "puzzlepiece.extension").tag(SidebarItem.rules)
-                    Label("设置", systemImage: "gearshape").tag(SidebarItem.settings)
+                    SettingsLink { Label("设置…", systemImage: "gearshape") }
+                        .buttonStyle(.plain)
                 }
             }
             .listStyle(.sidebar)
@@ -65,13 +67,21 @@ struct RootView: View {
                     Image(systemName: "info.circle.fill")
                     Text(model.notice)
                         .font(.callout)
+                        .textSelection(.enabled)
+                    Button {
+                        model.notice = ""
+                    } label: {
+                        Image(systemName: "xmark")
+                    }
+                    .buttonStyle(.borderless)
+                    .help("关闭提示")
+                    .accessibilityLabel("关闭提示")
                 }
                 .padding(.horizontal, 14)
                 .padding(.vertical, 8)
                 .background(.regularMaterial, in: Capsule())
                 .padding(.bottom, 8)
-                .accessibilityElement(children: .combine)
-                .accessibilityLabel(model.notice)
+                .accessibilityElement(children: .contain)
             }
         }
         .onChange(of: model.notice) { _, value in
@@ -81,10 +91,12 @@ struct RootView: View {
                 if model.notice == value { model.notice = "" }
             }
         }
-        .sheet(isPresented: Binding(
-            get: { !model.captchaURL.isEmpty },
-            set: { if !$0 { model.captchaURL = "" } }
-        )) {
+        .sheet(
+            isPresented: Binding(
+                get: { !model.captchaURL.isEmpty },
+                set: { if !$0 { model.captchaURL = "" } }
+            )
+        ) {
             if let url = URL(string: model.captchaURL) {
                 CaptchaSheet(url: url) { header in
                     model.ruleCookies[model.captchaPlugin] = header
@@ -93,17 +105,21 @@ struct RootView: View {
                 }
             }
         }
-        .onChange(of: model.sidebar) { _, _ in
-            model.path = NavigationPath()
+        .onChange(of: model.sidebar) { previous, selected in
+            navigationPaths[previous] = model.path
+            model.path = navigationPaths[selected] ?? NavigationPath()
         }
+        .disabled(model.nowPlaying != nil)
+        .accessibilityHidden(model.nowPlaying != nil)
         .overlay {
             if let request = model.nowPlaying {
-                PlayerScreen(request: request)
-                    .id(request.pageURL)
-                    .transition(.opacity)
+                GeometryReader { geometry in
+                    PlayerScreen(request: request)
+                        .id(request.pageURL)
+                        .frame(width: geometry.size.width, height: geometry.size.height)
+                }
             }
         }
-        .animation(.easeInOut(duration: 0.2), value: model.nowPlaying?.pageURL)
     }
 
     private var activeDownloads: Int {
@@ -130,7 +146,9 @@ struct RootView: View {
         case .history: HistoryView()
         case .downloads: DownloadsView()
         case .rules: RulesView()
-        case .settings: SettingsView()
+        case .settings:
+            EmptyHint(title: "应用设置", message: "在独立窗口中调整外观、播放和同步。", systemImage: "gearshape")
+                .overlay(alignment: .bottom) { SettingsLink { Text("打开设置…") }.padding(24) }
         }
     }
 }

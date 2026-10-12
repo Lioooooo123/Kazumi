@@ -1,6 +1,6 @@
 // Kazumi macOS native port. GPL-3.0-or-later. See LICENSE.
-import SwiftUI
 import KazumiCore
+import SwiftUI
 
 @main
 struct KazumiMacApp: App {
@@ -10,7 +10,7 @@ struct KazumiMacApp: App {
         WindowGroup {
             RootView()
                 .environment(model)
-                .frame(minWidth: 1040, minHeight: 720)
+                .frame(minWidth: 900, minHeight: 600)
                 .tint(KazumiTheme.accent(model.settings.accent))
                 .preferredColorScheme(KazumiTheme.scheme(model.settings.themeMode))
         }
@@ -26,7 +26,6 @@ struct KazumiMacApp: App {
                 Button("下载") { model.sidebar = .downloads }.keyboardShortcut("6", modifiers: .command)
                 Divider()
                 Button("规则") { model.sidebar = .rules }.keyboardShortcut("5", modifiers: .command)
-                Button("设置") { model.sidebar = .settings }.keyboardShortcut(",", modifiers: .command)
             }
             CommandMenu("播放") {
                 Button("播放或暂停") { model.sendPlayer(PlayerCommand.toggle) }
@@ -45,6 +44,9 @@ struct KazumiMacApp: App {
                     .keyboardShortcut("f", modifiers: [])
                     .disabled(model.nowPlaying == nil)
             }
+        }
+        Settings {
+            SettingsView().environment(model)
         }
     }
 }

@@ -1,6 +1,6 @@
 // Kazumi macOS native port. GPL-3.0-or-later. See LICENSE.
-import SwiftUI
 import KazumiCore
+import SwiftUI
 
 struct SeasonCalendarView: View {
     @Environment(AppModel.self) private var model
@@ -11,6 +11,7 @@ struct SeasonCalendarView: View {
         let items = model.timeline.indices.contains(weekday - 1) ? model.timeline[weekday - 1] : []
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
+                SectionHeading(title: "放送时间表", subtitle: seasonTitle)
                 weekdayPicker
                 if model.timelineLoading && model.timeline.allSatisfy(\.isEmpty) {
                     VStack(spacing: 12) {
@@ -27,7 +28,9 @@ struct SeasonCalendarView: View {
                                 Spacer()
                             }
                             .padding(12)
-                            .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: KazumiTheme.timelineRadius, style: .continuous))
+                            .background(
+                                Color.primary.opacity(0.04),
+                                in: RoundedRectangle(cornerRadius: KazumiTheme.timelineRadius, style: .continuous))
                         }
                     }
                     .accessibilityLabel("正在加载时间表")
@@ -49,15 +52,14 @@ struct SeasonCalendarView: View {
                                     isWatching: model.isFavorite(subject.id)
                                 )
                             }
-                            .buttonStyle(.plain)
-                            .hoverLift()
+                            .buttonStyle(ContentButtonStyle())
                         }
                     }
                 }
                 LoadingBar(active: model.timelineLoading)
             }
-            .padding(20)
-            .frame(maxWidth: 1280, alignment: .leading)
+            .padding(KazumiTheme.pagePadding)
+            .frame(maxWidth: KazumiTheme.pageWidth, alignment: .leading)
             .frame(maxWidth: .infinity)
         }
         .navigationTitle(seasonTitle)
@@ -80,16 +82,18 @@ struct SeasonCalendarView: View {
                 } label: {
                     VStack(spacing: 2) {
                         Text(AnimeCalendar.weekdayNames[day - 1])
-                            .font(.system(size: 13, weight: selected ? .semibold : .regular))
-                        Text(count == 0 ? " " : "\(count)")
-                            .font(.system(size: 11))
+                            .font(.body.weight(selected ? .semibold : .regular))
+                        Text("\(count) 部")
+                            .font(.caption)
                             .foregroundStyle(.secondary)
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 8)
-                    .background(selected ? Color.accentColor.opacity(0.18) : Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .background(
+                        selected ? Color.accentColor.opacity(0.18) : Color.primary.opacity(0.04),
+                        in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(ContentButtonStyle())
                 .accessibilityLabel("\(AnimeCalendar.weekdayNames[day - 1])，\(count) 部")
                 .accessibilityAddTraits(selected ? .isSelected : [])
             }

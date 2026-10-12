@@ -1,20 +1,25 @@
 // Kazumi macOS native port. GPL-3.0-or-later. See LICENSE.
-@preconcurrency import AppKit
 @preconcurrency import AVFoundation
 @preconcurrency import AVKit
-import SwiftUI
+@preconcurrency import AppKit
 import KazumiCore
+import SwiftUI
 
 struct PlayerScreen: View {
     var request: PlaybackRequest
     @Environment(AppModel.self) private var model
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var controller = PlaybackController()
     @State private var time: Double = 0
     @State private var duration: Double = 0
     @State private var playing = false
     @State private var status = "正在准备播放"
+    @State private var preparing = true
+    @State private var playbackFailed = false
     @State private var mediaURL: URL?
     @State private var candidates: [URL] = []
+    @State private var mediaReferer = ""
+    @State private var mediaCookies = ""
     @State private var comments: [DanmakuComment] = []
     @State private var danmakuNote = ""
     @State private var showControls = true
@@ -23,6 +28,7 @@ struct PlayerScreen: View {
     @State private var controlsToken = 0
     @State private var showDanmakuSettings = false
     @State private var lastSaved = Date.distantPast
+    @State private var showWebPlayer = false
     @State private var showCast = false
     @State private var showRoom = false
     @State private var dlna = DLNABrowser()
@@ -32,8 +38,12 @@ struct PlayerScreen: View {
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
-            VideoSurface(player: controller.player)
-                .ignoresSafeArea()
+            if !playbackFailed {
+                VideoSurface(player: controller.player)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .clipped()
+                    .ignoresSafeArea()
+            }
             if model.settings.danmakuEnabled {
                 DanmakuOverlay(
                     comments: comments,
@@ -46,11 +56,30 @@ struct PlayerScreen: View {
                 .ignoresSafeArea()
                 .allowsHitTesting(false)
             }
-            if mediaURL == nil {
-                VStack(spacing: 8) {
-                    ProgressView().controlSize(.large)
-                    Text(status).foregroundStyle(.white)
+            if mediaURL == nil || playbackFailed {
+                VStack(spacing: 16) {
+                    if preparing {
+                        ProgressView().controlSize(.large)
+                    } else {
+                        Image(systemName: "play.slash").font(.largeTitle)
+                    }
+                    Text(preparing ? "正在准备播放" : "暂时无法播放")
+                        .font(.title2.weight(.semibold))
+                    Text(status).font(.callout).foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center).textSelection(.enabled)
+                    if !preparing {
+                        HStack {
+                            Button("重新尝试") {
+                                Task { await prepare() }
+                            }
+                            .buttonStyle(.borderedProminent)
+                            Button("打开片源网页") { showWebPlayer = true }
+                            Button("返回分集") { model.nowPlaying = nil }
+                        }
+                    }
                 }
+                .padding(32)
+                .frame(maxWidth: 480)
             }
             if showControls {
                 VStack {
@@ -61,7 +90,8 @@ struct PlayerScreen: View {
                 .transition(.opacity)
             }
         }
-        .animation(.easeOut(duration: 0.2), value: showControls)
+        .animation(reduceMotion ? nil : KazumiTheme.controlsVisibility, value: showControls)
+        .environment(\.colorScheme, .dark)
         .focusable()
         .focused($playerFocused)
         .focusEffectDisabled()
@@ -81,7 +111,10 @@ struct PlayerScreen: View {
         .onContinuousHover { phase in
             if case .active = phase { bumpControls() }
         }
-        .onKeyPress(.escape) { model.nowPlaying = nil; return .handled }
+        .onKeyPress(.escape) {
+            model.nowPlaying = nil
+            return .handled
+        }
         .onChange(of: model.playerCommandToken) { _, _ in
             switch model.playerCommand {
             case PlayerCommand.toggle: toggle()
@@ -90,6 +123,11 @@ struct PlayerScreen: View {
             case PlayerCommand.next: playNext()
             case PlayerCommand.fullscreen: NSApp.keyWindow?.toggleFullScreen(nil)
             default: break
+            }
+        }
+        .sheet(isPresented: $showWebPlayer) {
+            if let url = URL(string: request.pageURL) {
+                WebPlaybackSheet(url: url, userAgent: request.userAgent, referer: request.referer)
             }
         }
         .sheet(isPresented: $showCast) { castSheet }
@@ -105,7 +143,7 @@ struct PlayerScreen: View {
                     .padding(8)
                     .background(.black.opacity(0.45), in: Circle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(ContentButtonStyle())
             .keyboardShortcut(.cancelAction)
             .help("关闭播放器")
             .accessibilityLabel("关闭播放器")
@@ -118,97 +156,126 @@ struct PlayerScreen: View {
                 Text(danmakuNote).font(.caption).foregroundStyle(.white.opacity(0.75))
             }
             HStack(spacing: 12) {
-            Button {
-                let lines = comments.map { "\(Int($0.time)) \($0.message)" }.joined(separator: "\n")
-                model.enqueueDownload(
-                    title: request.subjectName,
-                    episode: request.episodeName,
-                    url: (mediaURL ?? URL(string: request.pageURL))?.absoluteString ?? request.pageURL,
-                    danmakuText: lines
-                )
-            } label: {
-                Image(systemName: "arrow.down.circle")
-            }
-            .buttonStyle(.plain)
-            .help("下载")
-            .accessibilityLabel("下载当前视频")
-            Button { showCast = true } label: { Image(systemName: "tv") }
-                .buttonStyle(.plain)
+                Button {
+                    let lines = comments.map { "\(Int($0.time)) \($0.message)" }.joined(separator: "\n")
+                    model.enqueueDownload(
+                        title: request.subjectName,
+                        episode: request.episodeName,
+                        url: (mediaURL ?? URL(string: request.pageURL))?.absoluteString ?? request.pageURL,
+                        danmakuText: lines
+                    )
+                } label: {
+                    Image(systemName: "arrow.down.circle").frame(width: 36, height: 36)
+                }
+                .buttonStyle(ContentButtonStyle())
+                .help("下载")
+                .accessibilityLabel("下载当前视频")
+                Button {
+                    showCast = true
+                } label: {
+                    Image(systemName: "tv").frame(width: 36, height: 36)
+                }
+                .buttonStyle(ContentButtonStyle())
                 .help("DLNA 投屏")
                 .accessibilityLabel("DLNA 投屏")
-            Button { showRoom = true } label: { Image(systemName: "person.2") }
-                .buttonStyle(.plain)
+                Button {
+                    showRoom = true
+                } label: {
+                    Image(systemName: "person.2").frame(width: 36, height: 36)
+                }
+                .buttonStyle(ContentButtonStyle())
                 .help("一起看")
                 .accessibilityLabel("一起看")
-            Button {
-                if let url = mediaURL {
-                    ExternalPlayback.open(url: url, player: model.settings.externalPlayer)
+                Button {
+                    if let url = mediaURL {
+                        ExternalPlayback.open(url: url, player: model.settings.externalPlayer)
+                    }
+                } label: {
+                    Image(systemName: "arrow.up.forward.app").frame(width: 36, height: 36)
                 }
-            } label: { Image(systemName: "arrow.up.forward.app") }
-                .buttonStyle(.plain)
+                .buttonStyle(ContentButtonStyle())
                 .help("用外部播放器打开")
                 .accessibilityLabel("用外部播放器打开")
                 .disabled(mediaURL == nil)
-            Button {
-                model.updateSettings { $0.danmakuEnabled.toggle() }
-            } label: {
-                Image(systemName: model.settings.danmakuEnabled ? "captions.bubble.fill" : "captions.bubble")
-            }
-            .buttonStyle(.plain)
-            .help("弹幕")
-            Button {
-                showDanmakuSettings.toggle()
-            } label: {
-                Image(systemName: "slider.horizontal.3")
-            }
-            .buttonStyle(.plain)
-            .help("弹幕设置")
-            .popover(isPresented: $showDanmakuSettings, arrowEdge: .bottom) {
-                danmakuSettings
-            }
+                Button {
+                    model.updateSettings { $0.danmakuEnabled.toggle() }
+                } label: {
+                    Image(
+                        systemName: model.settings.danmakuEnabled ? "captions.bubble.fill" : "captions.bubble"
+                    )
+                    .frame(width: 36, height: 36)
+                }
+                .buttonStyle(ContentButtonStyle())
+                .help("弹幕")
+                .accessibilityLabel("弹幕")
+                .accessibilityValue(model.settings.danmakuEnabled ? "已开启" : "已关闭")
+                Button {
+                    showDanmakuSettings.toggle()
+                } label: {
+                    Image(systemName: "slider.horizontal.3").frame(width: 36, height: 36)
+                }
+                .buttonStyle(ContentButtonStyle())
+                .help("弹幕设置")
+                .accessibilityLabel("弹幕设置")
+                .popover(isPresented: $showDanmakuSettings, arrowEdge: .bottom) {
+                    danmakuSettings
+                }
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
             .background(.ultraThinMaterial, in: Capsule())
         }
         .foregroundStyle(.white)
+        .font(.body)
         .padding(16)
-        .background(LinearGradient(colors: [.black.opacity(0.55), .clear], startPoint: .top, endPoint: .bottom))
+        .background(
+            LinearGradient(colors: [.black.opacity(0.55), .clear], startPoint: .top, endPoint: .bottom))
     }
 
     private var controlBar: some View {
         VStack(spacing: 6) {
             Slider(value: seekBinding, in: 0...max(duration, 1))
                 .padding(.horizontal, 4)
+                .accessibilityLabel("播放进度")
+                .accessibilityValue("\(clock(time))，总时长 \(clock(duration))")
+                .disabled(duration <= 0)
             HStack(spacing: 14) {
-                Button { seek(by: -5) } label: {
+                Button {
+                    seek(by: -5)
+                } label: {
                     Image(systemName: "gobackward.5")
-                        .frame(width: 28, height: 28)
+                        .frame(width: 36, height: 36)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(ContentButtonStyle())
                 .help("后退 5 秒")
                 .accessibilityLabel("后退 5 秒")
-                Button { toggle() } label: {
+                Button {
+                    toggle()
+                } label: {
                     Image(systemName: playing ? "pause.fill" : "play.fill")
-                        .font(.system(size: 18))
-                        .frame(width: 32, height: 32)
+                        .font(.title3)
+                        .frame(width: 40, height: 40)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(ContentButtonStyle())
                 .help(playing ? "暂停" : "播放")
                 .accessibilityLabel(playing ? "暂停" : "播放")
-                Button { seek(by: 5) } label: {
+                Button {
+                    seek(by: 5)
+                } label: {
                     Image(systemName: "goforward.5")
-                        .frame(width: 28, height: 28)
+                        .frame(width: 36, height: 36)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(ContentButtonStyle())
                 .help("前进 5 秒")
                 .accessibilityLabel("前进 5 秒")
-                Button { playNext() } label: {
+                Button {
+                    playNext()
+                } label: {
                     Image(systemName: "forward.end.fill")
-                        .font(.system(size: 16))
-                        .frame(width: 28, height: 28)
+                        .font(.body)
+                        .frame(width: 36, height: 36)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(ContentButtonStyle())
                 .disabled(nextEpisode == nil)
                 .help("下一集")
                 .accessibilityLabel("下一集")
@@ -244,7 +311,6 @@ struct PlayerScreen: View {
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         .padding(.horizontal, 20)
         .padding(.bottom, 16)
-        .animation(.easeOut(duration: 0.2), value: showControls)
     }
 
     private var danmakuSettings: some View {
@@ -268,20 +334,32 @@ struct PlayerScreen: View {
     }
 
     private var seekBinding: Binding<Double> {
-        Binding(get: { time }, set: { value in
-            time = value
-            controller.player.seek(to: CMTime(seconds: value, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
-        })
+        Binding(
+            get: { time },
+            set: { value in
+                time = value
+                controller.player.seek(
+                    to: CMTime(seconds: value, preferredTimescale: 600), toleranceBefore: .zero,
+                    toleranceAfter: .zero)
+            })
     }
 
     private func bind() {
+        controller.onFailure = { message in
+            status = message
+            playbackFailed = true
+            playing = false
+            showControls = true
+        }
         controller.onTick = { current, length in
             time = current
             duration = length
             playing = controller.player.rate > 0.01
             if !playing { showControls = true }
             if !didSeek, length > 1, let record = savedProgress,
-               let start = PlaybackResume.position(saved: record.position, savedDuration: record.duration, mediaDuration: length) {
+                let start = PlaybackResume.position(
+                    saved: record.position, savedDuration: record.duration, mediaDuration: length)
+            {
                 didSeek = true
                 controller.player.seek(to: CMTime(seconds: start, preferredTimescale: 600))
             }
@@ -295,6 +373,8 @@ struct PlayerScreen: View {
             }
             if controller.player.currentItem?.status == .failed {
                 status = controller.player.currentItem?.error?.localizedDescription ?? "无法播放"
+                playbackFailed = true
+                showControls = true
             }
         }
     }
@@ -308,15 +388,21 @@ struct PlayerScreen: View {
     }
 
     private var opacityBinding: Binding<Double> {
-        Binding(get: { model.settings.danmakuOpacity }, set: { value in model.updateSettings { $0.danmakuOpacity = value } })
+        Binding(
+            get: { model.settings.danmakuOpacity },
+            set: { value in model.updateSettings { $0.danmakuOpacity = value } })
     }
 
     private var fontBinding: Binding<Double> {
-        Binding(get: { model.settings.danmakuFontSize }, set: { value in model.updateSettings { $0.danmakuFontSize = value } })
+        Binding(
+            get: { model.settings.danmakuFontSize },
+            set: { value in model.updateSettings { $0.danmakuFontSize = value } })
     }
 
     private var durationBinding: Binding<Double> {
-        Binding(get: { model.settings.danmakuDuration }, set: { value in model.updateSettings { $0.danmakuDuration = value } })
+        Binding(
+            get: { model.settings.danmakuDuration },
+            set: { value in model.updateSettings { $0.danmakuDuration = value } })
     }
 
     private func bumpControls() {
@@ -325,13 +411,24 @@ struct PlayerScreen: View {
         let token = controlsToken
         Task {
             try? await Task.sleep(nanoseconds: 3_000_000_000)
-            guard token == controlsToken, playing, !showDanmakuSettings else { return }
+            guard token == controlsToken, playing,
+                controller.player.currentItem?.status == .readyToPlay,
+                !playbackFailed, !showDanmakuSettings else { return }
             showControls = false
         }
     }
 
     private func prepare() async {
+        controller.player.pause()
+        mediaURL = nil
+        candidates = []
+        preparing = true
+        playbackFailed = false
+        mediaReferer = ""
+        mediaCookies = ""
+        defer { preparing = false }
         await loadDanmaku()
+        guard !Task.isCancelled else { return }
         guard let page = URL(string: request.pageURL) else {
             status = "播放地址无效"
             return
@@ -344,18 +441,35 @@ struct PlayerScreen: View {
         status = "正在从页面查找视频地址"
         do {
             let client = HTTPClient()
-            let response = try await client.get(request.pageURL, headers: [
-                "User-Agent": request.userAgent,
-                "Referer": request.referer,
-            ])
-            var found = MediaSniffer.mediaURLs(in: response.text, baseURL: page)
+            let response = try await client.get(
+                request.pageURL,
+                headers: [
+                    "User-Agent": request.userAgent,
+                    "Referer": request.referer,
+                ])
+            guard !Task.isCancelled else { return }
+            var found = MediaSniffer.mediaURLs(in: response.text, baseURL: response.url)
+            mediaReferer = response.url.absoluteString
+            if let resolved = try await model.resolveDirectPlayback(
+                page: response.url, html: response.text, userAgent: request.userAgent)
+            {
+                found = [resolved]
+            }
             if found.isEmpty {
                 status = "正在用网页嗅探视频地址"
-                let legacy = model.rules.first { $0.plugin.baseURL == request.referer || request.pageURL.hasPrefix($0.plugin.baseURL) }?.plugin.useLegacyParser ?? false
-                if let sniffed = await PageSniffer.find(url: page, userAgent: request.userAgent, referer: request.referer, legacy: legacy || true) {
-                    found = [sniffed]
+                let legacy =
+                    model.rules.first {
+                        $0.plugin.baseURL == request.referer || request.pageURL.hasPrefix($0.plugin.baseURL)
+                    }?.plugin.useLegacyParser ?? false
+                if let sniffed = await PageSniffer.find(
+                    url: page, userAgent: request.userAgent, referer: request.referer, legacy: legacy)
+                {
+                    found = [sniffed.url]
+                    mediaReferer = sniffed.referer
+                    mediaCookies = sniffed.cookieHeader
                 }
             }
+            guard !Task.isCancelled else { return }
             candidates = found
             if let first = found.first {
                 play(first)
@@ -368,12 +482,14 @@ struct PlayerScreen: View {
     }
 
     private func play(_ url: URL) {
+        playbackFailed = false
         mediaURL = url
         status = url.lastPathComponent
-        let headers = [
+        var headers = [
             "User-Agent": request.userAgent,
-            "Referer": request.referer,
+            "Referer": mediaReferer.isEmpty ? request.referer : mediaReferer,
         ]
+        if !mediaCookies.isEmpty { headers["Cookie"] = mediaCookies }
         controller.load(url: url, headers: headers, sharpen: model.settings.superResolution)
         controller.player.playImmediately(atRate: Float(model.settings.playbackRate))
         playing = true
@@ -422,13 +538,15 @@ struct PlayerScreen: View {
         let client = model.danmakuClient()
         do {
             let animes = try await client.searchAnime(title: request.subjectName)
-            guard let anime = DanmakuMatching.bestAnime(title: request.subjectName, candidates: animes) else {
+            guard let anime = DanmakuMatching.bestAnime(title: request.subjectName, candidates: animes)
+            else {
                 danmakuNote = "没有匹配到弹幕"
                 return
             }
             let info = try await client.episodes(bangumiID: anime.id)
             let number = DanmakuMatching.episodeNumber(from: request.episodeName)
-            guard let episode = DanmakuMatching.bestEpisode(number: number, episodes: info.episodes) else {
+            guard let episode = DanmakuMatching.bestEpisode(number: number, episodes: info.episodes)
+            else {
                 danmakuNote = "没有匹配到分集"
                 return
             }
@@ -456,6 +574,8 @@ struct VideoSurface: NSViewRepresentable {
         view.player = player
         view.videoGravity = .resizeAspect
         view.updatesNowPlayingInfoCenter = false
+        view.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        view.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
         return view
     }
 
@@ -468,19 +588,32 @@ struct VideoSurface: NSViewRepresentable {
 final class PlaybackController {
     let player = AVPlayer()
     var onTick: ((Double, Double) -> Void)?
+    var onFailure: ((String) -> Void)?
     private var observer: Any?
+    private var statusObserver: NSKeyValueObservation?
 
     func load(url: URL, headers: [String: String], sharpen: Int = SuperResolutionMode.off.rawValue) {
         let asset = AVURLAsset(url: url, options: ["AVURLAssetHTTPHeaderFieldsKey": headers])
         let item = AVPlayerItem(asset: asset)
         if sharpen != SuperResolutionMode.off.rawValue {
-            item.videoComposition = VideoSharpen.composition(for: asset, strong: sharpen == SuperResolutionMode.quality.rawValue)
+            item.videoComposition = VideoSharpen.composition(
+                for: asset, strong: sharpen == SuperResolutionMode.quality.rawValue)
+        }
+        statusObserver?.invalidate()
+        // Failed items may never emit a periodic time tick. Observe the item itself.
+        statusObserver = item.observe(\.status, options: [.initial, .new]) { [weak self] item, _ in
+            Task { @MainActor [weak self, weak item] in
+                guard let self, let item, self.player.currentItem === item, item.status == .failed else { return }
+                self.player.pause()
+                self.onFailure?(item.error?.localizedDescription ?? "当前视频无法播放，请重试或选择其他线路。")
+            }
         }
         player.replaceCurrentItem(with: item)
         guard observer == nil else { return }
         let interval = CMTime(seconds: 0.25, preferredTimescale: 600)
         // The observer closure is @Sendable. The player is main-actor isolated, and this queue is .main.
-        observer = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] time in
+        observer = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) {
+            [weak self] time in
             let seconds = time.seconds
             MainActor.assumeIsolated {
                 self?.handleTick(seconds)
@@ -494,6 +627,9 @@ final class PlaybackController {
     }
 
     func stop() {
+        statusObserver?.invalidate()
+        statusObserver = nil
+        onFailure = nil
         player.pause()
         if let observer {
             player.removeTimeObserver(observer)
@@ -519,7 +655,9 @@ struct DanmakuOverlay: View {
             ForEach(visible(in: geo.size, lanes: lanes)) { item in
                 Text(item.comment.message)
                     .font(.system(size: fontSize, weight: .semibold))
-                    .foregroundStyle(Color(rgb: item.comment.colorRGB == 0 ? 0xFFFFFF : item.comment.colorRGB))
+                    .foregroundStyle(
+                        Color(rgb: item.comment.colorRGB == 0 ? 0xFFFFFF : item.comment.colorRGB)
+                    )
                     .shadow(color: .black.opacity(0.75), radius: 1, y: 1)
                     .fixedSize()
                     .position(item.point)
@@ -555,11 +693,16 @@ struct DanmakuOverlay: View {
             let comment = placement.comment
             let age = max(0, time - comment.time)
             if comment.isTop {
-                return Placed(id: comment.id, comment: comment, point: CGPoint(x: size.width / 2, y: laneHeight(placement.lane, size: size)))
+                return Placed(
+                    id: comment.id, comment: comment,
+                    point: CGPoint(x: size.width / 2, y: laneHeight(placement.lane, size: size)))
             }
             if comment.isBottom {
                 let bottomLane = placement.lane
-                return Placed(id: comment.id, comment: comment, point: CGPoint(x: size.width / 2, y: size.height - 48 - CGFloat(bottomLane) * (fontSize + 6)))
+                return Placed(
+                    id: comment.id, comment: comment,
+                    point: CGPoint(
+                        x: size.width / 2, y: size.height - 48 - CGFloat(bottomLane) * (fontSize + 6)))
             }
             let textWidth = measuredWidth(comment.message)
             let progress = min(1, age / window)
@@ -575,8 +718,8 @@ struct DanmakuOverlay: View {
     }
 }
 
-private extension PlayerScreen {
-    var castSheet: some View {
+extension PlayerScreen {
+    fileprivate var castSheet: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("DLNA").font(.title3.weight(.semibold))
             Text(dlna.status).font(.callout).foregroundStyle(.secondary)
@@ -585,7 +728,9 @@ private extension PlayerScreen {
             ForEach(dlna.devices, id: \.control) { device in
                 Button(device.name) {
                     guard let mediaURL else { return }
-                    Task { await dlna.cast(control: device.control, media: mediaURL, title: request.subjectName) }
+                    Task {
+                        await dlna.cast(control: device.control, media: mediaURL, title: request.subjectName)
+                    }
                 }
             }
             Text("投屏发送的是当前直链。需要验证码或加密的地址，电视端未必能打开。")
@@ -596,13 +741,15 @@ private extension PlayerScreen {
         .frame(minWidth: 360)
     }
 
-    var roomSheet: some View {
+    fileprivate var roomSheet: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("一起看").font(.title3.weight(.semibold))
             Text(room.status).font(.callout).foregroundStyle(.secondary)
-            Text("房间 \(model.settings.syncplayHost):\(model.settings.syncplayPort)。协议与 Syncplay 的 Hello / State JSON 相同，默认不加密。")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            Text(
+                "房间 \(model.settings.syncplayHost):\(model.settings.syncplayPort)。协议与 Syncplay 的 Hello / State JSON 相同，默认不加密。"
+            )
+            .font(.caption)
+            .foregroundStyle(.secondary)
             HStack {
                 Button(room.connected ? "断开" : "连接") {
                     if room.connected {

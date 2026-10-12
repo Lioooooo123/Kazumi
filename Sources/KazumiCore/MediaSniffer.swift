@@ -8,15 +8,13 @@ import Foundation
 /// AVPlayer can start without that WebView. Pages that hide the address in
 /// obfuscated script still need the WebView port.
 public enum MediaSniffer {
-    public static let mediaExtensions: Set<String> = ["m3u8", "mp4", "m4v", "webm", "mkv", "flv", "mov", "m4s"]
+    public static let mediaExtensions: Set<String> = ["m3u8", "mp4", "m4v", "webm", "mkv", "flv", "mov"]
 
     public static func isDirect(_ url: URL) -> Bool {
-        let path = url.path.lowercased()
-        if let ext = path.split(separator: ".").last, mediaExtensions.contains(String(ext)) {
-            return true
-        }
-        let absolute = url.absoluteString.lowercased()
-        return absolute.contains(".m3u8") || absolute.contains("m3u8?")
+        guard ["http", "https"].contains(url.scheme?.lowercased() ?? "") else { return false }
+        // A player page can carry a playlist in its query. Only its own path
+        // identifies a direct resource; segments are not standalone videos.
+        return mediaExtensions.contains(url.pathExtension.lowercased())
     }
 
     public static func mediaURLs(in text: String, baseURL: URL?) -> [URL] {
@@ -30,18 +28,27 @@ public enum MediaSniffer {
         let range = NSRange(normalized.startIndex..<normalized.endIndex, in: normalized)
         var results: [URL] = []
         var seen = Set<String>()
+        func add(_ url: URL, depth: Int = 0) {
+            if isDirect(url) {
+                if LegacySniff.accepts(url.absoluteString), seen.insert(url.absoluteString).inserted {
+                    results.append(url)
+                }
+            } else if depth < 3, let components = URLComponents(url: url, resolvingAgainstBaseURL: false) {
+                for item in components.queryItems ?? [] {
+                    if let value = item.value, let nested = URL(string: value) { add(nested, depth: depth + 1) }
+                }
+            }
+        }
         for match in regex.matches(in: normalized, range: range) {
             guard let slice = Range(match.range, in: normalized) else { continue }
             var raw = String(normalized[slice])
             while let last = raw.last, ".,);]'\"".contains(last) {
                 raw.removeLast()
             }
-            guard let url = URL(string: raw), isDirect(url) else { continue }
-            if seen.insert(url.absoluteString).inserted {
-                results.append(url)
-            }
+            guard let url = URL(string: raw.replacingOccurrences(of: "&amp;", with: "&")) else { continue }
+            add(url)
         }
-        if let baseURL, isDirect(baseURL), seen.insert(baseURL.absoluteString).inserted {
+        if let baseURL, LegacySniff.accepts(baseURL.absoluteString), seen.insert(baseURL.absoluteString).inserted {
             results.insert(baseURL, at: 0)
         }
         return results

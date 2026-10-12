@@ -1,60 +1,65 @@
 // Kazumi macOS native port. GPL-3.0-or-later. See LICENSE.
-import SwiftUI
 import KazumiCore
+import SwiftUI
 
 struct PopularView: View {
     @Environment(AppModel.self) private var model
-    private let columns = [GridItem(.adaptive(minimum: 148, maximum: 190), spacing: KazumiTheme.cardSpacing)]
+    private let columns = KazumiTheme.posterColumns
 
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                Color.clear.frame(height: 0).id("top")
-                if !model.continueWatching.isEmpty {
-                    continueRow
-                }
-                if model.popularLoading && model.popular.isEmpty {
-                    popularSkeleton
-                } else if let error = model.popularError, model.popular.isEmpty {
-                    EmptyHint(title: "推荐加载失败", message: error, systemImage: "wifi.exclamationmark") {
-                        Task { await model.loadPopular(reset: true) }
+                VStack(alignment: .leading, spacing: 24) {
+                    if !model.continueWatching.isEmpty {
+                        continueRow
                     }
-                } else if model.popular.isEmpty {
-                    EmptyHint(title: "没有推荐", message: "换一个标签，或稍后再刷新。", systemImage: "square.grid.2x2")
-                } else {
-                    LazyVGrid(columns: columns, spacing: KazumiTheme.cardSpacing) {
-                        ForEach(model.popular) { subject in
-                            Button {
-                                model.open(subject)
-                            } label: {
-                                BangumiCard(subject: subject)
-                            }
-                            .buttonStyle(.plain)
-                            .onAppear {
-                                if subject.id == model.popular.last?.id {
-                                    Task { await model.loadPopular(reset: false) }
+                    SectionHeading(
+                        title: model.popularTag.isEmpty ? "发现好番" : model.popularTag,
+                        subtitle: "来自 Bangumi 的热门番剧")
+                    if model.popularLoading && model.popular.isEmpty {
+                        popularSkeleton
+                    } else if let error = model.popularError, model.popular.isEmpty {
+                        EmptyHint(title: "推荐加载失败", message: error, systemImage: "wifi.exclamationmark") {
+                            Task { await model.loadPopular(reset: true) }
+                        }
+                    } else if model.popular.isEmpty {
+                        EmptyHint(title: "没有推荐", message: "换一个标签，或稍后再刷新。", systemImage: "square.grid.2x2")
+                    } else {
+                        LazyVGrid(columns: columns, spacing: KazumiTheme.cardSpacing) {
+                            ForEach(model.popular) { subject in
+                                Button {
+                                    model.open(subject)
+                                } label: {
+                                    BangumiCard(subject: subject)
+                                }
+                                .buttonStyle(ContentButtonStyle())
+                                .onAppear {
+                                    if subject.id == model.popular.last?.id {
+                                        Task { await model.loadPopular(reset: false) }
+                                    }
                                 }
                             }
                         }
+                        LoadingBar(active: model.popularLoading && !model.popular.isEmpty)
                     }
-                    .padding(KazumiTheme.pagePadding)
-                    LoadingBar(active: model.popularLoading && !model.popular.isEmpty)
                 }
+                .id("top")
+                .padding(KazumiTheme.pagePadding)
+                .frame(maxWidth: KazumiTheme.pageWidth, alignment: .leading)
+                .frame(maxWidth: .infinity)
             }
-            .overlay(alignment: .bottomTrailing) {
-                Button {
-                    withAnimation { proxy.scrollTo("top") }
-                } label: {
-                    Image(systemName: "arrow.up")
-                        .font(.system(size: 14, weight: .bold))
-                        .padding(12)
-                        .background(.regularMaterial, in: Circle())
+            .toolbar {
+                ToolbarItem {
+                    Button {
+                        proxy.scrollTo("top")
+                    } label: {
+                        Image(systemName: "arrow.up.to.line")
+                    }
+                    .buttonStyle(.automatic)
+                    .help("回到顶部")
+                    .accessibilityLabel("回到顶部")
+                    .disabled(model.popular.isEmpty)
                 }
-                .buttonStyle(.plain)
-                .padding(20)
-                .help("回到顶部")
-                .accessibilityLabel("回到顶部")
-                .opacity(model.popular.isEmpty ? 0 : 1)
             }
         }
         .navigationTitle(model.popularTag.isEmpty ? "推荐" : model.popularTag)
@@ -67,7 +72,9 @@ struct PopularView: View {
                         Button(tag) { select(tag) }
                     }
                 } label: {
-                    Label(model.popularTag.isEmpty ? "全部" : model.popularTag, systemImage: "line.3.horizontal.decrease.circle")
+                    Label(
+                        model.popularTag.isEmpty ? "全部" : model.popularTag,
+                        systemImage: "line.3.horizontal.decrease.circle")
                 }
             }
             ToolbarItem {
@@ -96,14 +103,12 @@ struct PopularView: View {
                 }
             }
         }
-        .padding(KazumiTheme.pagePadding)
         .accessibilityLabel("正在加载推荐")
     }
 
     private var continueRow: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("继续观看")
-                .font(.system(size: 16, weight: .bold))
+            SectionHeading(title: "继续观看", subtitle: "从上次停下的地方继续")
             ScrollView(.horizontal) {
                 LazyHStack(spacing: KazumiTheme.cardSpacing) {
                     ForEach(model.continueWatching) { item in
@@ -112,14 +117,13 @@ struct PopularView: View {
                         } label: {
                             ContinueCard(item: item)
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(ContentButtonStyle())
                         .accessibilityLabel("继续观看 \(item.displayName)，\(item.episodeName)")
                     }
                 }
             }
         }
-        .padding(.horizontal, KazumiTheme.pagePadding)
-        .padding(.top, 16)
+
     }
 
     private func select(_ tag: String) {

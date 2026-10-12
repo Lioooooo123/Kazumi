@@ -495,6 +495,12 @@ final class AppModel {
         }.value
     }
 
+    func resolveDirectPlayback(page: URL, html: String, userAgent: String) async throws -> URL? {
+        guard let rule = rules.first(where: { page.absoluteString.hasPrefix($0.plugin.baseURL) })?.plugin else { return nil }
+        return try await XifanPlaybackService(http: ruleService.http).resolve(
+            page: page, html: html, rule: rule, userAgent: userAgent)
+    }
+
     func playback(ruleName: String, subject: BangumiSubject?, title: String, episode: EpisodeEntry, episodes: [EpisodeEntry]) -> PlaybackRequest {
         let rule = rules.first { $0.plugin.name == ruleName }?.plugin
         return PlaybackRequest(

@@ -1,8 +1,8 @@
 // Kazumi macOS native port. GPL-3.0-or-later. See LICENSE.
 import AppKit
 import ImageIO
-import SwiftUI
 import KazumiCore
+import SwiftUI
 
 @MainActor
 final class CoverLoader {
@@ -72,7 +72,8 @@ final class CoverLoader {
             kCGImageSourceCreateThumbnailWithTransform: true,
             kCGImageSourceShouldCacheImmediately: true,
         ]
-        guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, thumbOptions as CFDictionary) else {
+        guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, thumbOptions as CFDictionary)
+        else {
             return NSImage(data: data)
         }
         return NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
@@ -89,84 +90,129 @@ final class CoverLoader {
 
 struct CoverImage: View {
     var url: String
-
     @State private var image: NSImage?
+    @State private var loading = true
 
     var body: some View {
-        ZStack {
-            if let image {
-                Image(nsImage: image)
-                    .resizable()
-                    .scaledToFill()
-            } else if url.isEmpty {
-                Rectangle().fill(Color.primary.opacity(0.06))
-                Image(systemName: "photo")
-                    .font(.title3)
-                    .foregroundStyle(.secondary)
-            } else {
-                CoverPlaceholder()
+        Rectangle()
+            .fill(Color.primary.opacity(0.06))
+            .overlay {
+                GeometryReader { geometry in
+                    if let image {
+                        Image(nsImage: image)
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: geometry.size.width, height: geometry.size.height)
+                            .clipped()
+                    } else {
+                        Image(systemName: loading && !url.isEmpty ? "photo" : "photo.on.rectangle.angled")
+                            .font(.title2)
+                            .foregroundStyle(.tertiary)
+                            .frame(width: geometry.size.width, height: geometry.size.height)
+                    }
+                }
             }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .clipped()
-        .task(id: url) {
-            let loaded = await CoverLoader.shared.image(for: url)
-            if !Task.isCancelled { image = loaded }
-        }
+            .clipped()
+            .accessibilityHidden(true)
+            .task(id: url) {
+                image = nil
+                loading = true
+                let loaded = await CoverLoader.shared.image(for: url)
+                guard !Task.isCancelled else { return }
+                image = loaded
+                loading = false
+            }
+    }
+}
+
+struct PosterArtwork: View {
+    var url: String
+    var score: Double = 0
+
+    var body: some View {
+        CoverImage(url: url)
+            .aspectRatio(0.65, contentMode: .fit)
+            .overlay(alignment: .topTrailing) {
+                if score > 0 {
+                    Label(String(format: "%.1f", score), systemImage: "star.fill")
+                        .font(.caption.weight(.semibold).monospacedDigit())
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 5)
+                        .background(.black.opacity(0.72), in: Capsule())
+                        .padding(8)
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: KazumiTheme.cardRadius))
+            .overlay {
+                RoundedRectangle(cornerRadius: KazumiTheme.cardRadius)
+                    .strokeBorder(.primary.opacity(0.10), lineWidth: 0.5)
+            }
     }
 }
 
 struct BangumiCard: View {
     var subject: BangumiSubject
-    @Environment(\.colorScheme) private var scheme
-    @State private var hovering = false
+    @Environment(AppModel.self) private var model
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            CoverImage(url: subject.coverURL)
-                .aspectRatio(0.65, contentMode: .fill)
-                .frame(maxWidth: .infinity)
-                .overlay(alignment: .topTrailing) {
-                    if subject.score > 0 {
-                        Text(String(format: "%.1f", subject.score))
-                            .font(.system(size: 11, weight: .bold).monospacedDigit())
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 3)
-                            .background(.ultraThinMaterial, in: Capsule())
-                            .padding(6)
-                    }
-                }
-                .clipped()
+        VStack(alignment: .leading, spacing: 10) {
+            PosterArtwork(url: subject.coverURL, score: model.settings.showRating ? subject.score : 0)
             Text(subject.displayName)
-                .font(.system(size: 13, weight: .medium))
-                .tracking(0.3)
+                .font(.headline)
                 .foregroundStyle(.primary)
-                .lineLimit(2)
+                .lineLimit(2, reservesSpace: true)
                 .multilineTextAlignment(.leading)
-                .padding(EdgeInsets(top: 8, leading: 8, bottom: 8, trailing: 8))
-                .frame(maxWidth: .infinity, minHeight: 48, alignment: .topLeading)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .background(KazumiTheme.card(scheme))
-        .clipShape(RoundedRectangle(cornerRadius: KazumiTheme.cardRadius, style: .continuous))
-        .scaleEffect(hovering ? 1.03 : 1)
-        .shadow(color: .black.opacity(hovering ? (scheme == .dark ? 0.45 : 0.16) : 0.04), radius: hovering ? 10 : 2, y: hovering ? 4 : 1)
-        .onHover { hovering = $0 }
-        .animation(.easeOut(duration: 0.16), value: hovering)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(subject.score > 0 ? "\(subject.displayName)，评分 \(String(format: "%.1f", subject.score))" : subject.displayName)
-        .accessibilityHint("打开详情")
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(subject.displayName)
+        .accessibilityValue(
+            model.settings.showRating && subject.score > 0
+                ? "评分 \(String(format: "%.1f", subject.score))" : ""
+        )
+        .accessibilityHint("打开番剧详情")
     }
 }
 
-struct CoverPlaceholder: View {
-    @State private var bright = false
+/// Custom content keeps native buttons, keyboard activation and a visible focus ring.
+struct ContentButtonStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.isEnabled) private var enabled
+    @State private var hovering = false
+    @FocusState private var focused: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .contentShape(RoundedRectangle(cornerRadius: KazumiTheme.cardRadius))
+            .padding(3)
+            .overlay {
+                RoundedRectangle(cornerRadius: KazumiTheme.cardRadius + 3)
+                    .strokeBorder(
+                        focused ? Color.accentColor : Color.primary.opacity(hovering ? 0.18 : 0),
+                        lineWidth: focused ? 2 : 1)
+            }
+            .scaleEffect(reduceMotion || !configuration.isPressed ? 1 : 0.98)
+            .opacity(configuration.isPressed ? 0.82 : (enabled ? 1 : 0.5))
+            .onHover { hovering = $0 }
+            .focused($focused)
+            .animation(reduceMotion ? nil : KazumiTheme.pressFeedback, value: configuration.isPressed)
+    }
+}
+
+struct SectionHeading: View {
+    var title: String
+    var subtitle: String = ""
 
     var body: some View {
-        Rectangle()
-            .fill(Color.primary.opacity(bright ? 0.12 : 0.05))
-            .onAppear { bright = true }
-            .animation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true), value: bright)
-            .accessibilityHidden(true)
+        VStack(alignment: .leading, spacing: 5) {
+            Text(title).font(.title2.weight(.semibold))
+            if !subtitle.isEmpty {
+                Text(subtitle).font(.callout).foregroundStyle(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityAddTraits(.isHeader)
     }
 }
 
@@ -192,14 +238,14 @@ struct TimelineCard: View {
         HStack(alignment: .top, spacing: 16) {
             CoverImage(url: subject.coverURL)
                 .frame(width: 88, height: 132)
-                .clipShape(RoundedRectangle(cornerRadius: KazumiTheme.timelineRadius - 12, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: KazumiTheme.cardRadius, style: .continuous))
             VStack(alignment: .leading, spacing: 8) {
                 Text(subject.displayName)
-                    .font(.system(size: 16, weight: .bold))
+                    .font(.headline)
                     .lineLimit(2)
                 if !subject.timelineLine.isEmpty {
                     Text(subject.timelineLine)
-                        .font(.system(size: 12))
+                        .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
@@ -208,7 +254,7 @@ struct TimelineCard: View {
                     HStack(spacing: 8) {
                         if showRating {
                             Text(subject.score > 0 ? String(format: "%.1f", subject.score) : "暂无评分")
-                                .font(.system(size: 12, weight: .semibold))
+                                .font(.caption.weight(.semibold))
                                 .padding(.horizontal, 10)
                                 .padding(.vertical, 6)
                                 .background(KazumiTheme.chip(scheme), in: Capsule())
@@ -216,7 +262,7 @@ struct TimelineCard: View {
                         Spacer(minLength: 0)
                         if isWatching {
                             Image(systemName: "bookmark.fill")
-                                .font(.system(size: 14, weight: .semibold))
+                                .font(.body.weight(.semibold))
                                 .foregroundStyle(Color.accentColor)
                                 .help("正在追")
                         }
@@ -231,22 +277,8 @@ struct TimelineCard: View {
         .clipShape(RoundedRectangle(cornerRadius: KazumiTheme.timelineRadius, style: .continuous))
         .accessibilityElement(children: .combine)
         .accessibilityLabel(subject.displayName)
+        .accessibilityValue(isWatching ? "正在追番" : "")
     }
-}
-
-struct HoverLift: ViewModifier {
-    @State private var hovering = false
-
-    func body(content: Content) -> some View {
-        content
-            .scaleEffect(hovering ? 1.015 : 1)
-            .onHover { hovering = $0 }
-            .animation(.easeOut(duration: 0.16), value: hovering)
-    }
-}
-
-extension View {
-    func hoverLift() -> some View { modifier(HoverLift()) }
 }
 
 struct EmptyHint: View {
@@ -261,6 +293,8 @@ struct EmptyHint: View {
             ContentUnavailableView(title, systemImage: systemImage, description: Text(message))
             if let retry {
                 Button(retryTitle, action: retry)
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
                     .accessibilityLabel(retryTitle)
             }
         }
@@ -288,7 +322,7 @@ struct TagWrap: View {
         FlowLayout(spacing: 6) {
             ForEach(tags, id: \.self) { tag in
                 Text(tag)
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.caption)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
                     .background(.quaternary, in: Capsule())
@@ -307,7 +341,9 @@ struct FlowLayout: Layout {
         return CGSize(width: width, height: height)
     }
 
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+    func placeSubviews(
+        in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()
+    ) {
         let rows = arrange(width: bounds.width, subviews: subviews)
         for row in rows {
             for item in row.items {

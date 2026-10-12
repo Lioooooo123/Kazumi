@@ -1,6 +1,7 @@
 // Kazumi macOS native port. GPL-3.0-or-later. See LICENSE.
-import SwiftUI
+import AppKit
 import KazumiCore
+import SwiftUI
 
 enum KazumiTheme {
     static func accent(_ id: String) -> Color {
@@ -16,40 +17,37 @@ enum KazumiTheme {
         }
     }
 
-    /// Content well. Flutter paints this with `colorScheme.primaryContainer`.
+    /// System surfaces keep artwork, rather than the accent, in the foreground.
     static func canvas(_ scheme: ColorScheme, oled: Bool = false) -> Color {
         if oled && scheme == .dark { return .black }
-        return scheme == .dark
-            ? Color(red: 0.05, green: 0.09, blue: 0.07)
-            : Color(red: 0.82, green: 0.91, blue: 0.84)
+        return Color(nsColor: .windowBackgroundColor)
     }
 
-    /// Grid cards sit on the green well the way Material `Card` uses `surface`.
+    /// Local panels use a system control surface.
     static func card(_ scheme: ColorScheme) -> Color {
-        scheme == .dark
-            ? Color(red: 0.11, green: 0.14, blue: 0.12)
-            : Color.white
+        Color(nsColor: .controlBackgroundColor)
     }
 
-    /// Timeline cards use `surfaceContainerLow`, a step above the canvas.
+    /// Timeline rows share the same neutral surface.
     static func timelineCard(_ scheme: ColorScheme) -> Color {
-        scheme == .dark
-            ? Color(red: 0.14, green: 0.18, blue: 0.15)
-            : Color(red: 0.94, green: 0.97, blue: 0.94)
+        Color(nsColor: .controlBackgroundColor)
     }
 
-    /// Rating chip. Flutter uses `secondaryContainer`.
+    /// A secondary chip uses a quiet neutral fill.
     static func chip(_ scheme: ColorScheme) -> Color {
-        scheme == .dark
-            ? Color(red: 0.20, green: 0.28, blue: 0.22)
-            : Color(red: 0.84, green: 0.91, blue: 0.86)
+        Color.primary.opacity(0.06)
     }
 
-    static let cardSpacing: CGFloat = 12
-    static let cardRadius: CGFloat = 12
-    static let timelineRadius: CGFloat = 28
-    static let pagePadding: CGFloat = 20
+    static let cardSpacing: CGFloat = 20
+    static let cardRadius: CGFloat = 10
+    static let timelineRadius: CGFloat = 16
+    static let pagePadding: CGFloat = 24
     static let pageWidth: CGFloat = 1100
+
+    // Pointer press is brief; keyboard navigation never waits for a transition.
+    static let pressFeedback = Animation.easeOut(duration: 0.12)
+    static let controlsVisibility = Animation.easeOut(duration: 0.18)
+    static let posterColumns = [GridItem(.adaptive(minimum: 144, maximum: 184), spacing: cardSpacing)]
 }
 
 extension Color {

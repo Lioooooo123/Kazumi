@@ -88,26 +88,73 @@ struct CaptchaWebView: NSViewRepresentable {
     func updateNSView(_ view: WKWebView, context: Context) {}
 }
 
+struct WebPlaybackSheet: View {
+    var url: URL
+    var userAgent: String
+    var referer: String
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text("片源网页").font(.headline)
+                Spacer()
+                Button("关闭") { dismiss() }.keyboardShortcut(.cancelAction)
+            }.padding(16)
+            Divider()
+            WebPlaybackView(url: url, userAgent: userAgent, referer: referer)
+        }.frame(minWidth: 960, minHeight: 640)
+    }
+}
+
+private struct WebPlaybackView: NSViewRepresentable {
+    var url: URL
+    var userAgent: String
+    var referer: String
+
+    func makeNSView(context: Context) -> WKWebView {
+        let configuration = WKWebViewConfiguration()
+        configuration.mediaTypesRequiringUserActionForPlayback = []
+        let view = WKWebView(frame: .zero, configuration: configuration)
+        view.customUserAgent = userAgent
+        var request = URLRequest(url: url)
+        if !referer.isEmpty { request.setValue(referer, forHTTPHeaderField: "Referer") }
+        view.load(request)
+        return view
+    }
+
+    func updateNSView(_ view: WKWebView, context: Context) {}
+
+    static func dismantleNSView(_ view: WKWebView, coordinator: ()) {
+        view.stopLoading()
+        view.loadHTMLString("", baseURL: nil)
+    }
+}
+
+struct SniffedMedia {
+    var url: URL
+    var referer: String
+    var cookieHeader: String
+}
+
+@MainActor
 enum PageSniffer {
-    static func find(url: URL, userAgent: String, referer: String, legacy: Bool) async -> URL? {
+    static func find(url: URL, userAgent: String, referer: String, legacy: Bool) async -> SniffedMedia? {
         await withCheckedContinuation { continuation in
-            DispatchQueue.main.async {
-                let box = SniffBox(legacy: legacy) { found in
-                    continuation.resume(returning: found)
-                }
-                box.start(url: url, userAgent: userAgent, referer: referer)
-            }
+            let box = SniffBox(legacy: legacy) { continuation.resume(returning: $0) }
+            box.start(url: url, userAgent: userAgent, referer: referer)
         }
     }
 }
 
+@MainActor
 private final class SniffBox: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
-    var legacy: Bool
-    var finish: (URL?) -> Void
-    var webView: WKWebView?
-    var done = false
+    let legacy: Bool
+    let finish: (SniffedMedia?) -> Void
+    private var webView: WKWebView?
+    private var done = false
 
-    init(legacy: Bool, finish: @escaping (URL?) -> Void) {
+    init(legacy: Bool, finish: @escaping (SniffedMedia?) -> Void) {
         self.legacy = legacy
         self.finish = finish
     }
@@ -115,56 +162,125 @@ private final class SniffBox: NSObject, WKNavigationDelegate, WKScriptMessageHan
     func start(url: URL, userAgent: String, referer: String) {
         let content = WKUserContentController()
         content.add(self, name: "kazumi")
-        let script = WKUserScript(source: Self.source, injectionTime: .atDocumentEnd, forMainFrameOnly: false)
-        content.addUserScript(script)
+        content.addUserScript(WKUserScript(
+            source: "window.kazumiLegacySniff = \(legacy ? "true" : "false");" + Self.source,
+            injectionTime: .atDocumentStart, forMainFrameOnly: false))
         let configuration = WKWebViewConfiguration()
         configuration.userContentController = content
-        let view = WKWebView(frame: CGRect(x: 0, y: 0, width: 8, height: 8), configuration: configuration)
+        configuration.mediaTypesRequiringUserActionForPlayback = []
+        let view = WKWebView(frame: CGRect(x: 0, y: 0, width: 640, height: 360), configuration: configuration)
         view.navigationDelegate = self
         view.customUserAgent = userAgent
         webView = view
         var request = URLRequest(url: url)
         if !referer.isEmpty { request.setValue(referer, forHTTPHeaderField: "Referer") }
         view.load(request)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 12) { [weak self] in
-            self?.complete(nil)
-        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 25) { [weak self] in self?.complete(nil) }
     }
 
     func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
-        guard let raw = message.body as? String else { return }
-        let normalized = raw.hasPrefix("//") ? "https:" + raw : raw
-        guard LegacySniff.accepts(normalized), let url = URL(string: normalized) else { return }
-        if legacy || MediaSniffer.isDirect(url) || normalized.lowercased().contains(".m3u8") {
-            complete(url)
+        guard !done, let body = message.body as? [String: Any], let raw = body["url"] as? String,
+              let url = URL(string: raw), ["http", "https"].contains(url.scheme?.lowercased() ?? "") else { return }
+        let lower = url.absoluteString.lowercased()
+        guard !LegacySniff.blockedFragments.contains(where: { lower.contains($0) }) else { return }
+        guard !["ts", "m4s", "aac", "css", "js", "html", "jpg", "png", "svg"].contains(url.pathExtension.lowercased()) else { return }
+        let mime = (body["mime"] as? String ?? "").lowercased().split(separator: ";").first.map(String.init) ?? ""
+        let videoResponse = (mime.hasPrefix("video/") && mime != "video/mp2t") || ["application/vnd.apple.mpegurl", "application/x-mpegurl", "audio/mpegurl", "audio/x-mpegurl"].contains(mime)
+        // Frames, scripts, styles, thumbnails and HLS fragments are never a player URL.
+        guard MediaSniffer.isDirect(url) || videoResponse || (body["kind"] as? String == "video" && url.pathExtension.isEmpty) else { return }
+        let referer = body["document"] as? String ?? message.frameInfo.request.url?.absoluteString ?? ""
+        complete(url, referer: referer)
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        webView.evaluateJavaScript("window.kazumiScanMedia && window.kazumiScanMedia();", completionHandler: nil)
+    }
+
+    private func complete(_ url: URL?, referer: String = "") {
+        guard !done else { return }
+        done = true
+        guard let view = webView, let url else {
+            teardown()
+            finish(nil)
+            return
+        }
+        view.configuration.websiteDataStore.httpCookieStore.getAllCookies { [self] cookies in
+            let host = url.host?.lowercased() ?? ""
+            let matching = cookies.filter { cookie in
+                let domain = cookie.domain.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "."))
+                return (host == domain || host.hasSuffix("." + domain)) && url.path.hasPrefix(cookie.path)
+                    && (!cookie.isSecure || url.scheme == "https") && (cookie.expiresDate.map { $0 > Date() } ?? true)
+            }
+            let header = HTTPCookie.requestHeaderFields(with: matching)["Cookie"] ?? ""
+            teardown()
+            finish(SniffedMedia(url: url, referer: referer, cookieHeader: header))
         }
     }
 
-    private func complete(_ url: URL?) {
-        guard !done else { return }
-        done = true
+    private func teardown() {
         webView?.stopLoading()
+        webView?.configuration.userContentController.removeScriptMessageHandler(forName: "kazumi")
+        webView?.navigationDelegate = nil
         webView = nil
-        finish(url)
     }
 
-    private static let source = """
+    private static let source = #"""
     (function() {
-      function report(value) { try { window.webkit.messageHandlers.kazumi.postMessage(String(value || '')); } catch (e) {} }
-      function scan(root) {
-        root.querySelectorAll('video,source,iframe').forEach(function(node) {
-          report(node.currentSrc || node.src || '');
+      function mediaURL(value) {
+        try { return /\.(m3u8|mp4|m4v|webm|mkv|flv|mov)$/i.test(new URL(value, location.href).pathname); }
+        catch (_) { return false; }
+      }
+      function mediaType(mime) { return /^(video\/|application\/(vnd\.apple\.mpegurl|x-mpegurl)|audio\/(x-)?mpegurl)/i.test(mime || ''); }
+      function report(value, kind, mime) {
+        try {
+          var url = new URL(value, location.href);
+          if (!/^https?:$/.test(url.protocol)) return;
+          if (kind !== 'video' && !mediaURL(url.href) && !mediaType(mime)) return;
+          window.webkit.messageHandlers.kazumi.postMessage({url:url.href, kind:kind, mime:mime || '', document:location.href});
+        } catch (_) {}
+      }
+      function scan() {
+        document.querySelectorAll('video,video source').forEach(function(node) {
+          var value = node.currentSrc || node.src;
+          if (value) report(value, 'video', node.type);
         });
       }
-      scan(document);
+      function legacyBody(text) {
+        if (!window.kazumiLegacySniff || typeof text !== 'string') return;
+        var urls = text.replace(/\\\//g, '/').match(/https?:\/\/[^\s"'<>\\]+/g) || [];
+        urls.forEach(function(url) { if (mediaURL(url)) report(url, 'resource', ''); });
+      }
+      window.kazumiScanMedia = scan;
+      document.addEventListener('DOMContentLoaded', function() {
+        scan();
+        new MutationObserver(scan).observe(document.documentElement, {childList:true, subtree:true, attributes:true, attributeFilter:['src']});
+      });
+      document.addEventListener('loadedmetadata', scan, true);
+      document.addEventListener('play', scan, true);
       try {
-        var observer = new PerformanceObserver(function(list) {
-          list.getEntries().forEach(function(entry) { report(entry.name); });
+        new PerformanceObserver(function(list) {
+          list.getEntries().forEach(function(entry) { if (mediaURL(entry.name)) report(entry.name, 'resource', ''); });
+        }).observe({type:'resource', buffered:true});
+      } catch (_) {}
+      var originalFetch = window.fetch;
+      window.fetch = function() {
+        return originalFetch.apply(this, arguments).then(function(response) {
+          var type = response.headers.get('content-type') || '';
+          report(response.url, 'response', type);
+          if (window.kazumiLegacySniff && /json|text/.test(type)) response.clone().text().then(legacyBody).catch(function() {});
+          return response;
         });
-        observer.observe({ type: 'resource', buffered: true });
-      } catch (e) {}
+      };
+      var originalSend = XMLHttpRequest.prototype.send;
+      XMLHttpRequest.prototype.send = function() {
+        this.addEventListener('load', function() {
+          report(this.responseURL, 'response', this.getResponseHeader('content-type'));
+          try { if (this.responseType === '' || this.responseType === 'text') legacyBody(this.responseText); } catch (_) {}
+        });
+        return originalSend.apply(this, arguments);
+      };
     })();
-    """
+    """#
 }
 
 enum ExternalPlayback {
