@@ -124,7 +124,7 @@ swift test
 - 使用 `KazumiCore` 类型的文件需要自己 `import KazumiCore`（Xcode 27 不再让这个导入跨文件可见）。
 - `ContentUnavailableView` 的 `description` 参数是 `Text`，不能再传闭包。
 
-同一套核心库也在 Linux（Ubuntu 24.04，Swift 6.2）上用 `swift test` 跑过，并用 `-swift-version 6` 和 `-strict-concurrency=complete` 编译过。后续的卡片、预取、续播和弹幕分车道也先在 Linux 上测核心逻辑。这些 SwiftUI 改动还需要在 Xcode 27 上再编一次。
+同一套核心库在 Linux（Ubuntu 24.04，Swift 6.2）上 `swift test` 为 24 个测试通过，并用 `-swift-version 6` 和 `-strict-concurrency=complete` 编译过。卡片、预取、续播和弹幕分车道的界面改动还需要在 Xcode 27 上再编一次。
 
 还没有验证：
 
