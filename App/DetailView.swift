@@ -29,11 +29,25 @@ struct DetailView: View {
                 .frame(maxWidth: 980, alignment: .leading)
                 .frame(maxWidth: .infinity, alignment: .leading)
             } else if let error = model.detailError {
-                EmptyHint(title: "条目加载失败", message: error, systemImage: "exclamationmark.triangle")
-                Button("重试") { Task { await model.loadSubject(subjectID) } }
+                EmptyHint(title: "条目加载失败", message: error, systemImage: "exclamationmark.triangle") {
+                    Task { await model.loadSubject(subjectID) }
+                }
             } else {
-                ProgressView("正在读取条目")
-                    .frame(maxWidth: .infinity, minHeight: 240)
+                HStack(alignment: .top, spacing: 16) {
+                    RoundedRectangle(cornerRadius: KazumiTheme.cardRadius, style: .continuous)
+                        .fill(Color.primary.opacity(0.08))
+                        .frame(width: 168, height: 258)
+                    VStack(alignment: .leading, spacing: 10) {
+                        SkeletonLine(width: 220, height: 18)
+                        SkeletonLine(width: 140)
+                        SkeletonLine(width: 96)
+                        SkeletonLine(width: 180)
+                    }
+                    Spacer()
+                }
+                .padding(24)
+                .frame(maxWidth: .infinity, minHeight: 320, alignment: .topLeading)
+                .accessibilityLabel("正在读取条目")
             }
         }
         .navigationTitle(model.subject(id: subjectID)?.displayName ?? "详情")
@@ -161,9 +175,13 @@ struct DetailView: View {
                                 Text(hit.name)
                                 Spacer()
                                 Image(systemName: "play.circle")
+                                    .foregroundStyle(Color.accentColor)
                             }
+                            .padding(.vertical, 4)
+                            .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
+                        .accessibilityLabel("播放 \(hit.name)")
                     }
                 }
                 .padding(12)

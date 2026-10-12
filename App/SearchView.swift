@@ -4,6 +4,7 @@ import KazumiCore
 
 struct SearchView: View {
     @Environment(AppModel.self) private var model
+    @FocusState private var queryFocused: Bool
     private let columns = [GridItem(.adaptive(minimum: 148, maximum: 190), spacing: KazumiTheme.cardSpacing)]
 
     var body: some View {
@@ -13,10 +14,13 @@ struct SearchView: View {
                 HStack(spacing: 8) {
                     TextField("搜索番剧、角色或片源", text: $model.searchQuery)
                         .textFieldStyle(.roundedBorder)
+                        .focused($queryFocused)
+                        .accessibilityLabel("搜索番剧、角色或片源")
                         .onSubmit { Task { await model.search() } }
                     Button("搜索") { Task { await model.search() } }
                         .keyboardShortcut(.defaultAction)
-                        .disabled(model.searching)
+                        .disabled(model.searching || model.searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        .accessibilityLabel("开始搜索")
                 }
                 DisclosureGroup("以图搜番") {
                     HStack {
@@ -37,10 +41,25 @@ struct SearchView: View {
                         .font(.callout)
                         .foregroundStyle(.secondary)
                 }
-                if let error = model.searchError {
+                if model.searching && model.searchBangumi.isEmpty && model.searchGroups.isEmpty {
+                    HStack(spacing: 8) {
+                        ProgressView().controlSize(.small)
+                        Text("正在搜索 Bangumi 和已启用的规则")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                    }
+                    .accessibilityLabel("正在搜索")
+                } else if let error = model.searchError, model.searchBangumi.isEmpty, model.searchGroups.isEmpty {
+                    EmptyHint(title: "搜索失败", message: error, systemImage: "magnifyingglass") {
+                        Task { await model.search() }
+                    }
+                } else if !model.searching, model.searchBangumi.isEmpty, model.searchGroups.isEmpty, model.searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    EmptyHint(title: "搜索番剧", message: "输入名字后回车。Bangumi 资料和已启用规则会一起查。", systemImage: "magnifyingglass")
+                }
+                if let error = model.searchError, !model.searchBangumi.isEmpty || !model.searchGroups.isEmpty {
                     Text(error).foregroundStyle(.red).font(.callout)
                 }
-                LoadingBar(active: model.searching)
+                LoadingBar(active: model.searching && (!model.searchBangumi.isEmpty || !model.searchGroups.isEmpty))
                 if !model.searchBangumi.isEmpty {
                     Text("Bangumi")
                         .font(.title3.weight(.semibold))
@@ -96,10 +115,11 @@ struct SearchView: View {
                 }
             }
             .padding(20)
-            .frame(maxWidth: 1100, alignment: .leading)
+            .frame(maxWidth: KazumiTheme.pageWidth, alignment: .leading)
             .frame(maxWidth: .infinity)
         }
         .navigationTitle("搜索")
+        .onAppear { queryFocused = true }
     }
 }
 
@@ -115,10 +135,25 @@ struct EpisodesView: View {
             VStack(alignment: .leading, spacing: 16) {
                 Text(route.title).font(.title2.weight(.semibold))
                 Text(route.ruleName).font(.callout).foregroundStyle(.secondary)
-                if loading { ProgressView("正在读取分集") }
+                if loading {
+                    VStack(alignment: .leading, spacing: 8) {
+                        SkeletonLine(width: 120)
+                        HStack(spacing: 8) {
+                            ForEach(0..<6, id: \.self) { _ in
+                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                    .fill(Color.primary.opacity(0.08))
+                                    .frame(width: 88, height: 28)
+                            }
+                        }
+                    }
+                    .accessibilityLabel("正在读取分集")
+                }
                 if let error {
-                    Text(error).foregroundStyle(.red)
-                    Button("重试") { Task { await load() } }
+                    EmptyHint(title: "分集读取失败", message: error, systemImage: "exclamationmark.triangle") {
+                        Task { await load() }
+                    }
+                } else if !loading, roads.isEmpty {
+                    EmptyHint(title: "没有分集", message: "这条片源没有解析出播放线路。", systemImage: "list.bullet")
                 }
                 ForEach(roads) { road in
                     VStack(alignment: .leading, spacing: 8) {

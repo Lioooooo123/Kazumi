@@ -56,9 +56,15 @@ struct SettingsView: View {
             }
             Section("弹幕") {
                 Toggle("显示弹幕", isOn: boolBinding(\.danmakuEnabled))
-                Slider(value: opacityBinding, in: 0.3...1.0) { Text("不透明度") }
-                Slider(value: fontBinding, in: 12.0...32.0) { Text("字号") }
-                Slider(value: durationBinding, in: 4.0...16.0) { Text("滚动时长") }
+                Slider(value: opacityBinding, in: 0.3...1.0) {
+                    Text("不透明度 \(Int((model.settings.danmakuOpacity * 100).rounded()))%")
+                }
+                Slider(value: fontBinding, in: 12.0...32.0) {
+                    Text("字号 \(Int(model.settings.danmakuFontSize.rounded()))")
+                }
+                Slider(value: durationBinding, in: 4.0...16.0) {
+                    Text("滚动时长 \(Int(model.settings.danmakuDuration.rounded())) 秒")
+                }
                 TextField("屏蔽词，用逗号分隔", text: shieldBinding)
                 TextField("弹弹play AppId", text: secretBinding(\.dandanAppID))
                 SecureField("弹弹play AppSecret", text: secretBinding(\.dandanAppSecret))
@@ -95,8 +101,14 @@ struct SettingsView: View {
                 TextField("用户名", text: secretBinding(\.webDavUsername))
                 SecureField("密码", text: secretBinding(\.webDavPassword))
                 Toggle("启用 WebDAV", isOn: boolBinding(\.webDavEnabled))
-                Button(model.syncing ? "同步中" : "立即同步") { Task { await model.syncWebDAV() } }
-                    .disabled(model.syncing)
+                HStack(spacing: 8) {
+                    Button(model.syncing ? "同步中" : "立即同步") { Task { await model.syncWebDAV() } }
+                        .disabled(model.syncing || !model.settings.webDavEnabled)
+                        .accessibilityLabel(model.syncing ? "正在同步" : "立即同步")
+                    if model.syncing {
+                        ProgressView().controlSize(.small)
+                    }
+                }
                 Text("同步本机历史、追番，以及弹幕屏蔽词。历史文件在 /kazumiSync/history/macos-library.json，不覆盖 Flutter 的 Hive 变更日志。屏蔽词文档版本与 Flutter 相同。")
                     .font(.caption)
                     .foregroundStyle(.secondary)

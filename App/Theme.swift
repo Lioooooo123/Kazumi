@@ -45,9 +45,11 @@ enum KazumiTheme {
             : Color(red: 0.84, green: 0.91, blue: 0.86)
     }
 
-    static let cardSpacing: CGFloat = 8
+    static let cardSpacing: CGFloat = 12
     static let cardRadius: CGFloat = 12
     static let timelineRadius: CGFloat = 28
+    static let pagePadding: CGFloat = 20
+    static let pageWidth: CGFloat = 1100
 }
 
 extension Color {

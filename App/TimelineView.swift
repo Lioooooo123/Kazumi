@@ -12,10 +12,30 @@ struct SeasonCalendarView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 weekdayPicker
-                if let error = model.timelineError, model.timeline.allSatisfy(\.isEmpty) {
-                    EmptyHint(title: "时间表不可用", message: error, systemImage: "calendar.badge.exclamationmark")
-                    Button("重试") { Task { await model.loadTimeline() } }
-                } else if items.isEmpty, !model.timelineLoading {
+                if model.timelineLoading && model.timeline.allSatisfy(\.isEmpty) {
+                    VStack(spacing: 12) {
+                        ForEach(0..<4, id: \.self) { _ in
+                            HStack(spacing: 16) {
+                                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                    .fill(Color.primary.opacity(0.08))
+                                    .frame(width: 88, height: 132)
+                                VStack(alignment: .leading, spacing: 8) {
+                                    SkeletonLine(width: 180)
+                                    SkeletonLine(width: 120, height: 10)
+                                    SkeletonLine(width: 72, height: 10)
+                                }
+                                Spacer()
+                            }
+                            .padding(12)
+                            .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: KazumiTheme.timelineRadius, style: .continuous))
+                        }
+                    }
+                    .accessibilityLabel("正在加载时间表")
+                } else if let error = model.timelineError, model.timeline.allSatisfy(\.isEmpty) {
+                    EmptyHint(title: "时间表不可用", message: error, systemImage: "calendar.badge.exclamationmark") {
+                        Task { await model.loadTimeline() }
+                    }
+                } else if items.isEmpty {
                     EmptyHint(title: "这一天没有番剧", message: "换一天，或切换放送季度。", systemImage: "calendar")
                 } else {
                     LazyVGrid(columns: columns, spacing: 12) {
@@ -70,6 +90,8 @@ struct SeasonCalendarView: View {
                     .background(selected ? Color.accentColor.opacity(0.18) : Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("\(AnimeCalendar.weekdayNames[day - 1])，\(count) 部")
+                .accessibilityAddTraits(selected ? .isSelected : [])
             }
         }
     }
@@ -102,6 +124,9 @@ struct SeasonCalendarView: View {
             } label: {
                 Image(systemName: "arrow.clockwise")
             }
+            .help("刷新时间表")
+            .accessibilityLabel("刷新时间表")
+            .disabled(model.timelineLoading)
         }
     }
 

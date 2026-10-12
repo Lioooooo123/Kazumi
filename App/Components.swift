@@ -98,12 +98,13 @@ struct CoverImage: View {
                 Image(nsImage: image)
                     .resizable()
                     .scaledToFill()
-            } else {
-                Rectangle()
-                    .fill(Color.primary.opacity(0.06))
+            } else if url.isEmpty {
+                Rectangle().fill(Color.primary.opacity(0.06))
                 Image(systemName: "photo")
                     .font(.title3)
                     .foregroundStyle(.secondary)
+            } else {
+                CoverPlaceholder()
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -125,6 +126,16 @@ struct BangumiCard: View {
             CoverImage(url: subject.coverURL)
                 .aspectRatio(0.65, contentMode: .fill)
                 .frame(maxWidth: .infinity)
+                .overlay(alignment: .topTrailing) {
+                    if subject.score > 0 {
+                        Text(String(format: "%.1f", subject.score))
+                            .font(.system(size: 11, weight: .bold).monospacedDigit())
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 3)
+                            .background(.ultraThinMaterial, in: Capsule())
+                            .padding(6)
+                    }
+                }
                 .clipped()
             Text(subject.displayName)
                 .font(.system(size: 13, weight: .medium))
@@ -132,17 +143,42 @@ struct BangumiCard: View {
                 .foregroundStyle(.primary)
                 .lineLimit(2)
                 .multilineTextAlignment(.leading)
-                .padding(EdgeInsets(top: 4, leading: 6, bottom: 6, trailing: 6))
-                .frame(maxWidth: .infinity, minHeight: 44, alignment: .topLeading)
+                .padding(EdgeInsets(top: 8, leading: 8, bottom: 8, trailing: 8))
+                .frame(maxWidth: .infinity, minHeight: 48, alignment: .topLeading)
         }
         .background(KazumiTheme.card(scheme))
         .clipShape(RoundedRectangle(cornerRadius: KazumiTheme.cardRadius, style: .continuous))
-        .scaleEffect(hovering ? 1.025 : 1)
-        .shadow(color: .black.opacity(hovering ? 0.12 : 0), radius: hovering ? 8 : 0, y: 3)
+        .scaleEffect(hovering ? 1.03 : 1)
+        .shadow(color: .black.opacity(hovering ? (scheme == .dark ? 0.45 : 0.16) : 0.04), radius: hovering ? 10 : 2, y: hovering ? 4 : 1)
         .onHover { hovering = $0 }
         .animation(.easeOut(duration: 0.16), value: hovering)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(subject.displayName)
+        .accessibilityLabel(subject.score > 0 ? "\(subject.displayName)，评分 \(String(format: "%.1f", subject.score))" : subject.displayName)
+        .accessibilityHint("打开详情")
+    }
+}
+
+struct CoverPlaceholder: View {
+    @State private var bright = false
+
+    var body: some View {
+        Rectangle()
+            .fill(Color.primary.opacity(bright ? 0.12 : 0.05))
+            .onAppear { bright = true }
+            .animation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true), value: bright)
+            .accessibilityHidden(true)
+    }
+}
+
+struct SkeletonLine: View {
+    var width: CGFloat? = 160
+    var height: CGFloat = 12
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: 4, style: .continuous)
+            .fill(Color.primary.opacity(0.08))
+            .frame(width: width, height: height)
+            .accessibilityHidden(true)
     }
 }
 
@@ -217,10 +253,18 @@ struct EmptyHint: View {
     var title: String
     var message: String
     var systemImage: String
+    var retryTitle: String = "重试"
+    var retry: (() -> Void)? = nil
 
     var body: some View {
-        ContentUnavailableView(title, systemImage: systemImage, description: Text(message))
-            .frame(maxWidth: .infinity, minHeight: 280)
+        VStack(spacing: 12) {
+            ContentUnavailableView(title, systemImage: systemImage, description: Text(message))
+            if let retry {
+                Button(retryTitle, action: retry)
+                    .accessibilityLabel(retryTitle)
+            }
+        }
+        .frame(maxWidth: .infinity, minHeight: 280)
     }
 }
 

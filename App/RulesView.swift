@@ -77,6 +77,17 @@ struct RulesView: View {
             Text("浏览 Kazumi 官方规则仓库，一键安装，并在有新版本时更新。版本号按段比较，不会用旧版本覆盖本地规则。")
                 .font(.callout)
                 .foregroundStyle(.secondary)
+            if let progress = catalogProgress {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text(progress)
+                        .font(.callout)
+                }
+                .padding(10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .accessibilityLabel(progress)
+            }
             HStack {
                 Toggle("使用规则镜像", isOn: Binding(
                     get: { model.settings.useRuleMirror },
@@ -102,6 +113,7 @@ struct RulesView: View {
             }
             TextField("搜索规则或作者", text: $query)
                 .textFieldStyle(.roundedBorder)
+                .accessibilityLabel("搜索规则或作者")
             HStack {
                 Picker("筛选", selection: $filter) {
                     Text("全部 \(model.catalog.count)").tag(RuleCatalogFilter.all)
@@ -154,6 +166,12 @@ struct RulesView: View {
         model.catalog.filter { RuleUpdates.itemStatus(item: $0, installed: installedPlugins) == .update }.count
     }
 
+    private var catalogProgress: String? {
+        if model.updatingAllRules { return "正在检查并安装可更新的规则" }
+        if !model.busyRuleNames.isEmpty { return "正在安装 \(model.busyRuleNames.count) 条规则" }
+        return nil
+    }
+
     private func catalogRow(_ item: RuleCatalogItem) -> some View {
         let status = RuleUpdates.itemStatus(item: item, installed: installedPlugins)
         return HStack(alignment: .top, spacing: 12) {
@@ -196,6 +214,7 @@ struct RulesView: View {
                 }
             }
             .disabled(model.updatingAllRules)
+            .accessibilityLabel("\(status.actionTitle) \(item.name)")
         }
     }
 

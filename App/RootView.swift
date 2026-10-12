@@ -17,7 +17,15 @@ struct RootView: View {
                 Section("收藏") {
                     Label("追番", systemImage: "heart").tag(SidebarItem.favorites)
                     Label("历史", systemImage: "clock.arrow.circlepath").tag(SidebarItem.history)
-                    Label("下载", systemImage: "arrow.down.circle").tag(SidebarItem.downloads)
+                    Group {
+                        if activeDownloads > 0 {
+                            Label("下载", systemImage: "arrow.down.circle").badge(activeDownloads)
+                        } else {
+                            Label("下载", systemImage: "arrow.down.circle")
+                        }
+                    }
+                    .tag(SidebarItem.downloads)
+                    .accessibilityLabel(activeDownloads > 0 ? "下载，\(activeDownloads) 个进行中" : "下载")
                 }
                 Section {
                     Label("规则", systemImage: "puzzlepiece.extension").tag(SidebarItem.rules)
@@ -30,6 +38,7 @@ struct RootView: View {
         } detail: {
             NavigationStack(path: $model.path) {
                 detail(for: model.sidebar)
+                    .id(model.sidebar)
                     .navigationDestination(for: AppRoute.self) { route in
                         switch route {
                         case .detail(let id):
@@ -52,13 +61,17 @@ struct RootView: View {
         }
         .safeAreaInset(edge: .bottom) {
             if !model.notice.isEmpty {
-                Text(model.notice)
-                    .font(.callout)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 8)
-                    .background(.regularMaterial, in: Capsule())
-                    .padding(.bottom, 8)
-                    .accessibilityLabel(model.notice)
+                HStack(spacing: 8) {
+                    Image(systemName: "info.circle.fill")
+                    Text(model.notice)
+                        .font(.callout)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .background(.regularMaterial, in: Capsule())
+                .padding(.bottom, 8)
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel(model.notice)
             }
         }
         .onChange(of: model.notice) { _, value in
@@ -91,6 +104,10 @@ struct RootView: View {
             }
         }
         .animation(.easeInOut(duration: 0.2), value: model.nowPlaying?.pageURL)
+    }
+
+    private var activeDownloads: Int {
+        model.downloads.filter { $0.status == "running" || $0.status == "queued" }.count
     }
 
     /// `List` selection is optional. Clearing the highlight should not leave the detail blank.

@@ -58,8 +58,10 @@ struct PlayerScreen: View {
                     Spacer()
                     controlBar
                 }
+                .transition(.opacity)
             }
         }
+        .animation(.easeOut(duration: 0.2), value: showControls)
         .focusable()
         .focused($playerFocused)
         .focusEffectDisabled()
@@ -105,6 +107,8 @@ struct PlayerScreen: View {
             }
             .buttonStyle(.plain)
             .keyboardShortcut(.cancelAction)
+            .help("关闭播放器")
+            .accessibilityLabel("关闭播放器")
             VStack(alignment: .leading, spacing: 2) {
                 Text(request.subjectName).font(.headline)
                 Text(request.episodeName).font(.subheadline).foregroundStyle(.white.opacity(0.8))
@@ -113,6 +117,7 @@ struct PlayerScreen: View {
             if !danmakuNote.isEmpty {
                 Text(danmakuNote).font(.caption).foregroundStyle(.white.opacity(0.75))
             }
+            HStack(spacing: 12) {
             Button {
                 let lines = comments.map { "\(Int($0.time)) \($0.message)" }.joined(separator: "\n")
                 model.enqueueDownload(
@@ -161,6 +166,10 @@ struct PlayerScreen: View {
             .popover(isPresented: $showDanmakuSettings, arrowEdge: .bottom) {
                 danmakuSettings
             }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(.ultraThinMaterial, in: Capsule())
         }
         .foregroundStyle(.white)
         .padding(16)
@@ -171,15 +180,29 @@ struct PlayerScreen: View {
         VStack(spacing: 6) {
             Slider(value: seekBinding, in: 0...max(duration, 1))
                 .padding(.horizontal, 4)
-            HStack(spacing: 16) {
+            HStack(spacing: 14) {
+                Button { seek(by: -5) } label: {
+                    Image(systemName: "gobackward.5")
+                        .frame(width: 28, height: 28)
+                }
+                .buttonStyle(.plain)
+                .help("后退 5 秒")
+                .accessibilityLabel("后退 5 秒")
                 Button { toggle() } label: {
                     Image(systemName: playing ? "pause.fill" : "play.fill")
                         .font(.system(size: 18))
-                        .frame(width: 28, height: 28)
+                        .frame(width: 32, height: 32)
                 }
                 .buttonStyle(.plain)
                 .help(playing ? "暂停" : "播放")
                 .accessibilityLabel(playing ? "暂停" : "播放")
+                Button { seek(by: 5) } label: {
+                    Image(systemName: "goforward.5")
+                        .frame(width: 28, height: 28)
+                }
+                .buttonStyle(.plain)
+                .help("前进 5 秒")
+                .accessibilityLabel("前进 5 秒")
                 Button { playNext() } label: {
                     Image(systemName: "forward.end.fill")
                         .font(.system(size: 16))
@@ -217,19 +240,25 @@ struct PlayerScreen: View {
                 Text(status).font(.caption).lineLimit(1).frame(maxWidth: 180, alignment: .trailing)
             }
         }
-        .foregroundStyle(.white)
-        .padding(.horizontal, 16)
-        .padding(.top, 8)
-        .padding(.bottom, 12)
-        .background(LinearGradient(colors: [.clear, .black.opacity(0.72)], startPoint: .top, endPoint: .bottom))
+        .padding(14)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .padding(.horizontal, 20)
+        .padding(.bottom, 16)
+        .animation(.easeOut(duration: 0.2), value: showControls)
     }
 
     private var danmakuSettings: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("弹幕").font(.headline)
-            Slider(value: opacityBinding, in: 0.3...1.0) { Text("不透明度") }
-            Slider(value: fontBinding, in: 12.0...32.0) { Text("字号") }
-            Slider(value: durationBinding, in: 4.0...16.0) { Text("滚动时长") }
+            Slider(value: opacityBinding, in: 0.3...1.0) {
+                Text("不透明度 \(Int((model.settings.danmakuOpacity * 100).rounded()))%")
+            }
+            Slider(value: fontBinding, in: 12.0...32.0) {
+                Text("字号 \(Int(model.settings.danmakuFontSize.rounded()))")
+            }
+            Slider(value: durationBinding, in: 4.0...16.0) {
+                Text("滚动时长 \(Int(model.settings.danmakuDuration.rounded())) 秒")
+            }
             Text("屏蔽词在设置里修改。")
                 .font(.caption)
                 .foregroundStyle(.secondary)

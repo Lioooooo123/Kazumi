@@ -10,11 +10,11 @@ struct KazumiMacApp: App {
         WindowGroup {
             RootView()
                 .environment(model)
-                .frame(minWidth: 980, minHeight: 680)
+                .frame(minWidth: 1040, minHeight: 720)
                 .tint(KazumiTheme.accent(model.settings.accent))
                 .preferredColorScheme(KazumiTheme.scheme(model.settings.themeMode))
         }
-        .defaultSize(width: 1180, height: 780)
+        .defaultSize(width: 1280, height: 840)
         .commands {
             CommandGroup(replacing: .newItem) {}
             CommandMenu("前往") {

@@ -41,6 +41,8 @@ struct FavoritesView: View {
                             }
                             .buttonStyle(.plain)
                             .hoverLift()
+                            .accessibilityLabel(item.displayName)
+                            .accessibilityHint("打开详情")
                             .contextMenu {
                                 Button("取消追番", role: .destructive) { model.removeFavorite(item.subjectID) }
                             }
@@ -138,14 +140,20 @@ struct HistoryView: View {
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text(item.displayName).font(.body.weight(.medium))
                                     Text(item.episodeName).font(.callout).foregroundStyle(.secondary)
-                                    ProgressView(value: item.progress)
-                                        .frame(maxWidth: 220)
+                                    HStack(spacing: 8) {
+                                        ProgressView(value: item.progress)
+                                            .frame(maxWidth: 220)
+                                        Text("\(Int((item.progress * 100).rounded()))%")
+                                            .font(.caption.monospacedDigit())
+                                            .foregroundStyle(.secondary)
+                                    }
                                 }
                                 Spacer()
                             }
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
+                        .accessibilityLabel("\(item.displayName)，\(item.episodeName)，已看 \(Int((item.progress * 100).rounded()))%")
                         .contextMenu {
                             Button("删除", role: .destructive) { model.removeHistory(item.id) }
                         }

@@ -13,33 +13,32 @@ struct PopularView: View {
                 if !model.continueWatching.isEmpty {
                     continueRow
                 }
-                if model.popularLoading {
-                    ProgressView()
-                        .progressViewStyle(.linear)
-                        .frame(height: 4)
-                        .padding(.horizontal, 20)
-                }
-                LazyVGrid(columns: columns, spacing: KazumiTheme.cardSpacing) {
-                    ForEach(model.popular) { subject in
-                        Button {
-                            model.open(subject)
-                        } label: {
-                            BangumiCard(subject: subject)
-                        }
-                        .buttonStyle(.plain)
-                        .onAppear {
-                            if subject.id == model.popular.last?.id {
-                                Task { await model.loadPopular(reset: false) }
+                if model.popularLoading && model.popular.isEmpty {
+                    popularSkeleton
+                } else if let error = model.popularError, model.popular.isEmpty {
+                    EmptyHint(title: "推荐加载失败", message: error, systemImage: "wifi.exclamationmark") {
+                        Task { await model.loadPopular(reset: true) }
+                    }
+                } else if model.popular.isEmpty {
+                    EmptyHint(title: "没有推荐", message: "换一个标签，或稍后再刷新。", systemImage: "square.grid.2x2")
+                } else {
+                    LazyVGrid(columns: columns, spacing: KazumiTheme.cardSpacing) {
+                        ForEach(model.popular) { subject in
+                            Button {
+                                model.open(subject)
+                            } label: {
+                                BangumiCard(subject: subject)
+                            }
+                            .buttonStyle(.plain)
+                            .onAppear {
+                                if subject.id == model.popular.last?.id {
+                                    Task { await model.loadPopular(reset: false) }
+                                }
                             }
                         }
                     }
-                }
-                .padding(20)
-                LoadingBar(active: model.popularLoading)
-                if let error = model.popularError, model.popular.isEmpty {
-                    EmptyHint(title: "推荐加载失败", message: error, systemImage: "wifi.exclamationmark")
-                    Button("重试") { Task { await model.loadPopular(reset: true) } }
-                        .padding(.bottom, 24)
+                    .padding(KazumiTheme.pagePadding)
+                    LoadingBar(active: model.popularLoading && !model.popular.isEmpty)
                 }
             }
             .overlay(alignment: .bottomTrailing) {
@@ -54,6 +53,8 @@ struct PopularView: View {
                 .buttonStyle(.plain)
                 .padding(20)
                 .help("回到顶部")
+                .accessibilityLabel("回到顶部")
+                .opacity(model.popular.isEmpty ? 0 : 1)
             }
         }
         .navigationTitle(model.popularTag.isEmpty ? "推荐" : model.popularTag)
@@ -77,10 +78,26 @@ struct PopularView: View {
                 }
                 .help("刷新推荐")
                 .accessibilityLabel("刷新推荐")
-                .help("刷新")
+                .disabled(model.popularLoading)
             }
         }
         .task { if model.popular.isEmpty { await model.loadPopular(reset: true) } }
+    }
+
+    private var popularSkeleton: some View {
+        LazyVGrid(columns: columns, spacing: KazumiTheme.cardSpacing) {
+            ForEach(0..<8, id: \.self) { _ in
+                VStack(alignment: .leading, spacing: 8) {
+                    RoundedRectangle(cornerRadius: KazumiTheme.cardRadius, style: .continuous)
+                        .fill(Color.primary.opacity(0.08))
+                        .aspectRatio(0.65, contentMode: .fit)
+                    SkeletonLine(width: 96, height: 10)
+                    SkeletonLine(width: 64, height: 10)
+                }
+            }
+        }
+        .padding(KazumiTheme.pagePadding)
+        .accessibilityLabel("正在加载推荐")
     }
 
     private var continueRow: some View {
@@ -96,11 +113,12 @@ struct PopularView: View {
                             ContinueCard(item: item)
                         }
                         .buttonStyle(.plain)
+                        .accessibilityLabel("继续观看 \(item.displayName)，\(item.episodeName)")
                     }
                 }
             }
         }
-        .padding(.horizontal, 20)
+        .padding(.horizontal, KazumiTheme.pagePadding)
         .padding(.top, 16)
     }
 
