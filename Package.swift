@@ -10,7 +10,10 @@ let package = Package(
     targets: [
         .target(
             name: "KazumiCore",
-            path: "Sources/KazumiCore"
+            path: "Sources/KazumiCore",
+            linkerSettings: [
+                .linkedLibrary("iconv", .when(platforms: [.macOS])),
+            ]
         ),
         .testTarget(
             name: "KazumiCoreTests",

@@ -344,14 +344,14 @@ final class DLNABrowser {
             Task { @MainActor in
                 guard let self else { return }
                 if let text, let location = DLNAMessages.location(in: text), let url = URL(string: location) {
-                    await self.describe(url)
+                    await self.loadDevice(at: url)
                 }
                 self.listen()
             }
         }
     }
 
-    private func describe(_ url: URL) async {
+    private func loadDevice(at url: URL) async {
         guard let xml = try? await HTTPClient().get(url.absoluteString).text,
               let control = DLNAMessages.controlURL(in: xml, base: url) else { return }
         let name = url.host ?? control.host ?? "渲染器"

@@ -109,6 +109,8 @@ scripts/build-macos.sh
 
 在一台 Mac 上用 **Xcode 27.0 / Swift 6.4 / macOS 27.2** 编译运行过早期外壳（当时目标名还是 `KazumiMac`）。修正两处编译错误后可以启动：使用 `KazumiCore` 类型的文件需要自己 `import KazumiCore`；`ContentUnavailableView` 的 `description` 必须是 `Text`。
 
-核心库在 Linux（Ubuntu 24.04，Swift 6.2）上 `swift test` 为 37 个测试通过，并用 `-swift-version 6` 和 `-strict-concurrency=complete` 编译通过。改名、挪到仓库根目录，以及删掉 Flutter 之后，应用本身还需要在 Xcode 27 上再编一次。GitHub Actions 的 macOS 作业会执行 `scripts/ci.sh`。
+在 **Xcode 27 / macOS 27.2** 上，当前这棵树 `BUILD SUCCEEDED`，`swift test` 37 个测试通过，`XiaoLizi.app` 可以启动。编译前修了三处：`@Observable` 的 `init` 不能在全部存储属性就绪前改 `settings`；DLNA 的 `describe` 不能和错误描述函数同名；macOS 上 `KazumiCore` 需要链接 `libiconv`。GitHub Actions 的 macOS 作业执行 `scripts/ci.sh`，会编应用并跑这组测试。
+
+核心库在 Linux（Ubuntu 24.04，Swift 6.2）上同样是 37 个测试通过，并用 `-swift-version 6` 和 `-strict-concurrency=complete` 编译通过。
 
 还没有在本机点过：启动之后的页面、AVKit 实际播放、弹幕是否跟着进度走，以及真实 Bangumi / 弹弹play / 规则站点。

@@ -124,19 +124,20 @@ final class AppModel {
         store = LibraryStore(directory: directory)
         downloadStore = DownloadStore(directory: directory)
         let snapshot = (try? store.load()) ?? .empty
-        settings = snapshot.settings
-        if settings.deviceID.isEmpty {
-            settings.deviceID = UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
+        var initialSettings = snapshot.settings
+        if initialSettings.deviceID.isEmpty {
+            initialSettings.deviceID = UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
         }
-        downloads = downloadStore.load()
-        downloadFolder = DownloadFolder.resolve()
-        let http = AppModel.makeHTTP(settings)
+        let http = AppModel.makeHTTP(initialSettings)
         bangumi = BangumiClient(http: http)
         ruleService = RuleService(http: http)
         rulesRepo = RuleRepository(http: http)
+        settings = initialSettings
         rules = snapshot.rules
         favorites = snapshot.favorites
         history = snapshot.history
+        downloads = downloadStore.load()
+        downloadFolder = DownloadFolder.resolve()
         selectedWeekday = AnimeCalendar.localWeekday(Date())
         CoverLoader.shared.configure(directory: AppPaths.imageCache)
         CoverLoader.shared.prefetch(history.prefix(8).map(\.imageURL))
