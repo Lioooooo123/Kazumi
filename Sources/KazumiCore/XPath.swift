@@ -107,20 +107,29 @@ public enum XPath {
                 return text.isEmpty ? nil : .text(text)
             }
         case .element(let name):
-            let pool = step.axis == .child ? element.childElements : element.descendantElements
-            var matched = pool.filter { name == "*" || $0.name == name }
-            for predicate in step.predicates {
-                switch predicate {
-                case .equals(let attribute, let value):
-                    matched = matched.filter { $0.attribute(attribute) == value }
-                case .contains(let attribute, let value):
-                    matched = matched.filter { $0.attribute(attribute)?.contains(value) == true }
-                case .position(let position):
-                    let index = position - 1
-                    matched = index >= 0 && index < matched.count ? [matched[index]] : []
+            let descendants = element.descendantElements
+            // `//tag[n]` abbreviates descendant-or-self::node()/child::tag[n].
+            // Evaluate the predicates per parent, then return document order.
+            let parents = step.axis == .child ? [element] : [element] + descendants
+            var results: [HTMLElement] = []
+            for parent in parents {
+                var matched = parent.childElements.filter { name == "*" || $0.name == name }
+                for predicate in step.predicates {
+                    switch predicate {
+                    case .equals(let attribute, let value):
+                        matched = matched.filter { $0.attribute(attribute) == value }
+                    case .contains(let attribute, let value):
+                        matched = matched.filter { $0.attribute(attribute)?.contains(value) == true }
+                    case .position(let position):
+                        let index = position - 1
+                        matched = matched.indices.contains(index) ? [matched[index]] : []
+                    }
                 }
+                results.append(contentsOf: matched)
             }
-            return matched.map { .element($0) }
+            let selected = Set(results.map { ObjectIdentifier($0) })
+            let ordered = step.axis == .child ? element.childElements : descendants
+            return ordered.filter { selected.contains(ObjectIdentifier($0)) }.map { .element($0) }
         }
     }
 

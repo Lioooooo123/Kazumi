@@ -113,9 +113,12 @@ struct PopularView: View {
                 LazyHStack(spacing: KazumiTheme.cardSpacing) {
                     ForEach(model.continueWatching) { item in
                         Button {
-                            model.play(model.playback(from: item))
+                            Task { await model.resume(item) }
                         } label: {
                             ContinueCard(item: item)
+                                .overlay(alignment: .topTrailing) {
+                                    if model.restoringHistoryID == item.id { ProgressView().padding(8) }
+                                }
                         }
                         .buttonStyle(ContentButtonStyle())
                         .accessibilityLabel("继续观看 \(item.displayName)，\(item.episodeName)")

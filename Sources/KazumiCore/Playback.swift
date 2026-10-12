@@ -1,6 +1,33 @@
 // Kazumi macOS native port. GPL-3.0-or-later. See LICENSE.
 import Foundation
 
+/// Source information needed for history restoration and switching roads.
+/// Keep expiring media URLs and verification cookies out of persistent history.
+public struct PlaybackContext: Codable, Hashable, Sendable {
+    public var ruleName: String
+    public var source: String
+    public var roadName: String
+    public var roads: [PlaybackRoad]
+    public var referer: String
+    public var userAgent: String
+
+    public init(ruleName: String, source: String, roadName: String, roads: [PlaybackRoad], referer: String, userAgent: String) {
+        self.ruleName = ruleName
+        self.source = source
+        self.roadName = roadName
+        self.roads = roads
+        self.referer = referer
+        self.userAgent = userAgent
+    }
+
+    public var episodes: [EpisodeEntry] { roads.first { $0.name == roadName }?.episodes ?? [] }
+
+    public func episode(on road: PlaybackRoad, replacing pageURL: String) -> EpisodeEntry? {
+        guard let index = episodes.firstIndex(where: { $0.url == pageURL }), road.episodes.indices.contains(index) else { return nil }
+        return road.episodes[index]
+    }
+}
+
 /// Copy used on the timeline card. Matches `BangumiTimelineCard._supportingText`.
 public enum CatalogText {
     public static func timelineLine(
@@ -78,7 +105,7 @@ public enum ContinueWatching {
         var seen = Set<String>()
         var result: [HistoryRecord] = []
         for record in records {
-            let key = record.subjectID > 0 ? "id:\(record.subjectID)" : record.pageURL
+            let key = record.subjectID > 0 ? "id:\(record.subjectID)" : (record.displayName.isEmpty ? record.pageURL : "title:\(record.displayName)")
             if !seen.insert(key).inserted { continue }
             if PlaybackResume.position(saved: record.position, savedDuration: record.duration, mediaDuration: 0) == nil,
                record.duration > 1 {

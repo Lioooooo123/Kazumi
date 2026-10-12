@@ -7,8 +7,10 @@ let package = Package(
     platforms: [.macOS(.v14)],
     products: [
         .library(name: "KazumiCore", targets: ["KazumiCore"]),
+        .library(name: "MPVBridge", targets: ["MPVBridge"]),
     ],
     targets: [
+        .target(name: "MPVBridge", publicHeadersPath: "include"),
         .target(
             name: "KazumiCore",
             path: "Sources/KazumiCore",

@@ -214,7 +214,8 @@ struct EpisodesView: View {
                                         subject: subject,
                                         title: route.title,
                                         episode: episode,
-                                        episodes: road.episodes
+                                        episodes: road.episodes,
+                                        source: route.source, roadName: road.name, roads: roads
                                     )
                                     var playback = request
                                     if subject == nil {

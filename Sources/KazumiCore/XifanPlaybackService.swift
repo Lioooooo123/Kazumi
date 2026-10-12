@@ -7,16 +7,18 @@ public struct XifanPlaybackService: Sendable {
     public var http: HTTPClient
     public init(http: HTTPClient = HTTPClient()) { self.http = http }
 
-    public func resolve(page: URL, html: String, rule: PluginRule, userAgent: String) async throws -> URL? {
+    public func resolve(page: URL, html: String, rule: PluginRule, userAgent: String, selectedSourceID: Int? = nil) async throws -> URL? {
         guard page.scheme == "https", page.host?.lowercased() == "next.xifanacg.com",
               let configuredAPI = URL(string: rule.chapterAPI.request.url),
               configuredAPI.scheme == "https", configuredAPI.host?.lowercased() == "api.xifanacg.com" else { return nil }
         let path = page.path.split(separator: "/")
         guard path.count == 4, path[0] == "anime", path[2] == "play",
               let anime = Int(path[1]), anime > 0, let episode = Int(path[3]), episode > 0 else { return nil }
-        guard let source = Self.sourceID(in: html, anime: anime, episode: episode) else {
+        guard let defaultSource = Self.sourceID(in: html, anime: anime, episode: episode) else {
             throw KazumiError.message("无法读取稀饭片源的当前集数和播放线路")
         }
+        let source = selectedSourceID ?? defaultSource
+        guard source > 0 else { throw KazumiError.message("稀饭播放线路无效") }
         // Use the public request configuration already declared by this rule.
         // Never copy a browser account token or persist a signed media URL.
         var headers = rule.chapterAPI.request.headers.mapValues(\.templateString)

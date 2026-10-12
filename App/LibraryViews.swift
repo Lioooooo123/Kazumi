@@ -138,7 +138,7 @@ struct HistoryView: View {
                         List {
                             ForEach(rows) { item in
                                 Button {
-                                    model.play(model.playback(from: item))
+                                    Task { await model.resume(item) }
                                 } label: {
                                     HStack(spacing: 12) {
                                         CoverImage(url: item.imageURL)
@@ -156,6 +156,9 @@ struct HistoryView: View {
                                             }
                                         }
                                         Spacer()
+                                        if model.restoringHistoryID == item.id {
+                                            ProgressView().controlSize(.small)
+                                        }
                                     }
                                     .contentShape(Rectangle())
                                 }

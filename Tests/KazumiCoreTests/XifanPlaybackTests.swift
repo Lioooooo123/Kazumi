@@ -3,6 +3,15 @@ import XCTest
 @testable import KazumiCore
 
 final class XifanPlaybackTests: XCTestCase {
+    func testSelectedRoadOverridesTheWebPagesDefaultSource() async throws {
+        let transport = PlaybackFixtureTransport(response: response(source: 8))
+        let result = try await XifanPlaybackService(http: HTTPClient(transport: transport)).resolve(page: firstPage, html: html(), rule: rule(), userAgent: "", selectedSourceID: 8)
+        XCTAssertEqual(result?.absoluteString, signedMedia)
+        let requests = await transport.requests
+        let body = try JSONValue.parse(XCTUnwrap(requests.first?.httpBody))
+        XCTAssertEqual(body["source_id"]?.int, 8)
+    }
+
     private let firstPage = URL(string: "https://next.xifanacg.com/anime/3432/play/203775")!
     private let signedMedia = "https://media.example/student01.mp4?sign=fixture&t=1999999999"
 

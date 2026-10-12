@@ -41,7 +41,7 @@ public struct SearchHit: Equatable, Sendable, Identifiable, Hashable {
     }
 }
 
-public struct EpisodeEntry: Equatable, Sendable, Identifiable, Hashable {
+public struct EpisodeEntry: Equatable, Sendable, Identifiable, Hashable, Codable {
     public var name: String
     public var url: String
 
@@ -53,15 +53,17 @@ public struct EpisodeEntry: Equatable, Sendable, Identifiable, Hashable {
     }
 }
 
-public struct PlaybackRoad: Equatable, Sendable, Identifiable, Hashable {
+public struct PlaybackRoad: Equatable, Sendable, Identifiable, Hashable, Codable {
     public var name: String
     public var episodes: [EpisodeEntry]
+    public var sourceID: String?
 
-    public var id: String { name + "|" + (episodes.first?.url ?? "") }
+    public var id: String { name + "|" + (sourceID ?? "") + "|" + (episodes.first?.url ?? "") }
 
-    public init(name: String, episodes: [EpisodeEntry]) {
+    public init(name: String, episodes: [EpisodeEntry], sourceID: String? = nil) {
         self.name = name
         self.episodes = episodes
+        self.sourceID = sourceID
     }
 }
 
@@ -340,7 +342,8 @@ public struct RuleEngine: Sendable {
             }
             roads.append(PlaybackRoad(
                 name: roadName.isEmpty ? "播放线路\(roads.count + 1)" : roadName,
-                episodes: episodes
+                episodes: episodes,
+                sourceID: roadNode["id"]?.fieldString
             ))
         }
         return roads
