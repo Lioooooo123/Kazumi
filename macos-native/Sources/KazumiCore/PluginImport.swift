@@ -11,6 +11,21 @@ public struct PluginImportResult: Equatable, Sendable {
 
 /// Imports Kazumi rule JSON and `kazumi://` share links.
 public enum PluginImporter {
+    /// A single http(s) address is fetched before parsing. JSON and `kazumi://` stay local.
+    public static func isRemoteURL(_ value: String) -> Bool {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty,
+              !trimmed.contains(where: \.isNewline),
+              !trimmed.lowercased().contains("kazumi:"),
+              let url = URL(string: trimmed),
+              let scheme = url.scheme?.lowercased(),
+              scheme == "http" || scheme == "https",
+              url.host?.isEmpty == false else {
+            return false
+        }
+        return true
+    }
+
     public static func parse(_ input: String) -> PluginImportResult {
         let value = input.trimmingCharacters(in: .whitespacesAndNewlines)
         if value.isEmpty {

@@ -52,6 +52,13 @@ final class AppModel {
     var favorites: [FavoriteRecord]
     var history: [HistoryRecord]
 
+    var catalog: [RuleCatalogItem] = []
+    var catalogLoaded = false
+    var catalogLoading = false
+    var catalogError: String?
+    var busyRuleNames: Set<String> = []
+    var updatingAllRules = false
+
     var subjects: [Int: BangumiSubject] = [:]
     var popular: [BangumiSubject] = []
     var popularTag = ""
@@ -79,9 +86,11 @@ final class AppModel {
     private let store: LibraryStore
     private let bangumi = BangumiClient()
     private let ruleService = RuleService()
+    private let rulesRepo = RuleRepository()
     private var popularTask: UUID?
     private var searchToken = UUID()
     private var timelineToken = UUID()
+    private var catalogToken = UUID()
 
     init() {
         let directory = AppPaths.support
@@ -147,15 +156,142 @@ final class AppModel {
     func importRules(_ text: String) -> PluginImportResult {
         let result = PluginImporter.parse(text)
         for plugin in result.plugins {
-            if let index = rules.firstIndex(where: { $0.plugin.name.lowercased() == plugin.name.lowercased() }) {
-                let enabled = rules[index].enabled
-                rules[index] = InstalledRule(enabled: enabled, plugin: plugin)
-            } else {
-                rules.append(InstalledRule(enabled: true, plugin: plugin))
+            upsertRule(plugin)
+        }
+        return result
+    }
+
+    /// JSON and `kazumi://` are parsed locally. A bare http(s) URL is downloaded first.
+    func importRemote(_ text: String) async -> String {
+        let value = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if value.isEmpty { return "导入内容为空" }
+        if PluginImporter.isRemoteURL(value) {
+            do {
+                let response = try await rulesRepo.http.get(value)
+                return importSummary(importRules(response.text))
+            } catch {
+                return "导入规则失败"
             }
         }
-        if !result.plugins.isEmpty { persist() }
-        return result
+        return importSummary(importRules(value))
+    }
+
+    func refreshCatalog() async {
+        let token = UUID()
+        catalogToken = token
+        catalogLoading = true
+        defer { if catalogToken == token { catalogLoading = false } }
+        let mirror = settings.useRuleMirror
+        do {
+            let result = try await rulesRepo.index(mirror: mirror)
+            guard catalogToken == token else { return }
+            catalog = result.items
+            catalogLoaded = true
+            catalogError = nil
+        } catch {
+            guard catalogToken == token else { return }
+            catalogError = describe(error)
+        }
+    }
+
+    func applyCatalogRule(named name: String) async -> String {
+        let key = name.lowercased()
+        if busyRuleNames.contains(key) { return "" }
+        busyRuleNames.insert(key)
+        defer { busyRuleNames.remove(key) }
+        let installing = catalogStatus(named: name) != .update
+        do {
+            let outcome = try await prepareCatalogRule(named: name)
+            if let plugin = outcome.rule { upsertRule(plugin) }
+            return RuleUpdates.singleMessage(outcome, installing: installing)
+        } catch {
+            return installing ? "导入规则失败" : "更新规则失败"
+        }
+    }
+
+    func updateAllRules() async -> String {
+        if updatingAllRules { return "" }
+        updatingAllRules = true
+        defer { updatingAllRules = false }
+        if !catalogLoaded {
+            await refreshCatalog()
+        }
+        guard catalogLoaded else { return "更新规则失败" }
+        let names = RuleUpdates.updatableNames(installed: rules.map(\.plugin), catalog: catalog)
+        if names.isEmpty {
+            return RuleUpdates.batchMessage(RuleBatchUpdateResult(
+                updated: 0, requiresNewerClient: 0, failed: 0, notNewer: 0, hasNoCandidates: true
+            ))
+        }
+        var updated = 0
+        var requiresNewerClient = 0
+        var failed = 0
+        var notNewer = 0
+        for name in names {
+            let key = name.lowercased()
+            busyRuleNames.insert(key)
+            do {
+                let outcome = try await prepareCatalogRule(named: name)
+                switch outcome {
+                case .updated(let plugin):
+                    updated += 1
+                    upsertRule(plugin)
+                case .requiresNewerClient:
+                    requiresNewerClient += 1
+                case .notNewer:
+                    notNewer += 1
+                case .failed:
+                    failed += 1
+                }
+            } catch {
+                failed += 1
+            }
+            busyRuleNames.remove(key)
+        }
+        return RuleUpdates.batchMessage(RuleBatchUpdateResult(
+            updated: updated,
+            requiresNewerClient: requiresNewerClient,
+            failed: failed,
+            notNewer: notNewer,
+            hasNoCandidates: false
+        ))
+    }
+
+    func catalogStatus(named name: String) -> RuleCatalogItemStatus {
+        guard let item = RuleCatalog.item(named: name, in: catalog) else { return .install }
+        return RuleUpdates.itemStatus(item: item, installed: rules.map(\.plugin))
+    }
+
+    private func prepareCatalogRule(named name: String) async throws -> RuleUpdateOutcome {
+        let remote = try await rulesRepo.rule(named: name, mirror: settings.useRuleMirror)
+        let item = RuleCatalog.item(named: name, in: catalog)
+        let local = rules.first { $0.plugin.id == name.lowercased() }?.plugin
+        return RuleUpdates.decide(
+            local: local,
+            remote: remote,
+            expectedName: item?.name ?? name,
+            catalogAuthor: item?.author ?? ""
+        )
+    }
+
+    private func upsertRule(_ plugin: PluginRule) {
+        if let index = rules.firstIndex(where: { $0.plugin.id == plugin.id }) {
+            let enabled = rules[index].enabled
+            rules[index] = InstalledRule(enabled: enabled, plugin: plugin)
+        } else {
+            rules.append(InstalledRule(enabled: true, plugin: plugin))
+        }
+        persist()
+    }
+
+    private func importSummary(_ result: PluginImportResult) -> String {
+        if result.plugins.isEmpty {
+            return result.failures.first ?? "没有导入任何规则"
+        }
+        var text = "导入 \(result.plugins.count) 条"
+        if result.duplicateCount > 0 { text += "，跳过重复 \(result.duplicateCount) 条" }
+        if !result.failures.isEmpty { text += "，\(result.failures.count) 条失败" }
+        return text
     }
 
     func setRuleEnabled(_ id: String, _ enabled: Bool) {

@@ -6,6 +6,12 @@ public enum KazumiCore {
     public static let version = "0.1.0"
     public static let ruleAPILevel = 8
     public static let projectURL = "https://github.com/Predidit/Kazumi"
+
+    /// Official rule index used by the Flutter client (`ApiEndpoints.pluginShop`).
+    public static let ruleShop = "https://raw.githubusercontent.com/Predidit/KazumiRules/main/"
+
+    /// Mirror used when the git proxy setting is on (`ApiEndpoints.pluginShopMirror`).
+    public static let ruleShopMirror = "https://raw.gitcode.com/gh_mirrors/ka/KazumiRules/raw/main/"
     public static let bangumiAPI = "https://api.bgm.tv"
     public static let bangumiNextAPI = "https://next.bgm.tv"
     public static let dandanAPI = "https://api.dandanplay.net"

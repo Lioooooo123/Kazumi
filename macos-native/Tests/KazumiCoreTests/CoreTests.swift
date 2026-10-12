@@ -203,6 +203,25 @@ final class PluginImportTests: XCTestCase {
         XCTAssertTrue(result.plugins.isEmpty)
         XCTAssertFalse(result.failures.isEmpty)
     }
+
+    func testAuthorRoundTripOmitsEmpty() throws {
+        let plain = PluginRule(json: try JSONValue.parse(#"{"name":"本地","api":"8"}"#))
+        XCTAssertEqual(plain.author, "")
+        XCTAssertNil(plain.jsonObject()["author"])
+        let credited = PluginRule(json: try JSONValue.parse(#"{"name":"本地","api":"8","author":"Ada"}"#))
+        XCTAssertEqual(credited.jsonObject()["author"], .string("Ada"))
+        let again = PluginRule(json: credited.jsonObject())
+        XCTAssertEqual(again.author, "Ada")
+    }
+
+    func testRemoteURLDetection() {
+        XCTAssertTrue(PluginImporter.isRemoteURL("https://example.com/rule.json"))
+        XCTAssertTrue(PluginImporter.isRemoteURL(" http://example.com/a%20b.json "))
+        XCTAssertFalse(PluginImporter.isRemoteURL("kazumi://abc"))
+        XCTAssertFalse(PluginImporter.isRemoteURL(#"{"name":"示例"}"#))
+        XCTAssertFalse(PluginImporter.isRemoteURL("请看 https://example.com/a.json"))
+        XCTAssertFalse(PluginImporter.isRemoteURL(""))
+    }
 }
 
 final class BangumiModelTests: XCTestCase {
@@ -286,6 +305,7 @@ final class LibraryAndSnifferTests: XCTestCase {
         XCTAssertEqual(loaded.rules.first?.plugin.name, "本地")
         XCTAssertEqual(loaded.rules.first?.enabled, false)
         XCTAssertEqual(loaded.settings.themeMode, "dark")
+        XCTAssertFalse(loaded.settings.useRuleMirror)
         XCTAssertEqual(loaded.favorites.first?.displayName, "中文名")
         XCTAssertEqual(loaded.history.first?.progress ?? 0, 0.5, accuracy: 0.001)
         try? FileManager.default.removeItem(at: directory)
@@ -404,5 +424,121 @@ final class PlaybackFlowTests: XCTestCase {
         XCTAssertEqual(lanes[4], 1)
         let later = DanmakuLanes.assign(comments: comments, at: 8, travel: 8, laneCount: 4, shield: [])
         XCTAssertEqual(later.first { $0.comment.id == 3 }?.lane, 0)
+    }
+}
+
+final class RuleCatalogTests: XCTestCase {
+    func testParsesIndexAndSkipsInvalidItems() throws {
+        let raw = """
+        [
+          {"name":"7sefun","version":"1.3","useNativePlayer":true,"antiCrawlerEnabled":false,"author":"","lastUpdate":1786362131000},
+          {"name":"broken"},
+          {"name":"dalvdm","version":"2","useNativePlayer":false,"author":"北","lastUpdate":1700000000000,"antiCrawlerConfig":{"enabled":true}},
+          "not-an-object"
+        ]
+        """
+        let parsed = try RuleCatalog.parseIndex(raw)
+        XCTAssertEqual(parsed.skippedItems, 2)
+        XCTAssertEqual(parsed.items.map(\.name), ["7sefun", "dalvdm"])
+        XCTAssertEqual(parsed.items[0].updatedAt?.timeIntervalSince1970 ?? 0, 1_786_362_131, accuracy: 0.001)
+        XCTAssertFalse(parsed.items[0].antiCrawlerEnabled)
+        XCTAssertTrue(parsed.items[1].antiCrawlerEnabled)
+        XCTAssertEqual(parsed.items[1].author, "北")
+        XCTAssertEqual(try RuleCatalog.parseIndex("[]").items.count, 0)
+    }
+
+    func testRejectsIndexWithoutValidItems() {
+        XCTAssertThrowsError(try RuleCatalog.parseIndex(#"{"name":"7sefun"}"#))
+        XCTAssertThrowsError(try RuleCatalog.parseIndex(#"[{"name":"missing"}]"#)) { error in
+            XCTAssertEqual(String(describing: error), "Rule catalog contains no valid items")
+        }
+    }
+
+    func testVersionComparison() {
+        XCTAssertTrue(RuleUpdates.remoteIsNewer(local: "1.2", remote: "1.2.1"))
+        XCTAssertFalse(RuleUpdates.remoteIsNewer(local: "1.10", remote: "1.9"))
+        XCTAssertTrue(RuleUpdates.remoteIsNewer(local: "1.9", remote: "1.10"))
+        XCTAssertFalse(RuleUpdates.remoteIsNewer(local: "1.2.0", remote: "1.2"))
+        XCTAssertFalse(RuleUpdates.remoteIsNewer(local: "1.4", remote: "1.4"))
+        XCTAssertTrue(RuleUpdates.remoteIsNewer(local: "abc", remote: "def"))
+        XCTAssertFalse(RuleUpdates.remoteIsNewer(local: "abc", remote: "abc"))
+        XCTAssertTrue(RuleUpdates.remoteIsNewer(local: "1", remote: ""))
+        XCTAssertFalse(RuleUpdates.remoteIsNewer(local: "", remote: ""))
+    }
+
+    func testUpdateDecision() throws {
+        let installed = rule(#"{"name":"AGE","version":"1.0","api":"8","author":"旧"}"#)
+        let newer = rule(#"{"name":"age","version":"1.1","api":"8"}"#)
+        let outcome = RuleUpdates.decide(local: installed, remote: newer, expectedName: "AGE", catalogAuthor: "仓库")
+        guard case .updated(let adopted) = outcome else {
+            return XCTFail("expected an update")
+        }
+        XCTAssertEqual(adopted.name, "AGE")
+        XCTAssertEqual(adopted.version, "1.1")
+        XCTAssertEqual(adopted.author, "仓库")
+
+        let fresh = RuleUpdates.decide(local: nil, remote: newer, expectedName: "AGE", catalogAuthor: "仓库")
+        XCTAssertEqual(fresh.rule?.name, "AGE")
+
+        let same = rule(#"{"name":"AGE","version":"1.0","api":"8"}"#)
+        XCTAssertEqual(RuleUpdates.decide(local: installed, remote: same, expectedName: "AGE"), .notNewer)
+
+        let future = rule(#"{"name":"AGE","version":"9","api":"99"}"#)
+        XCTAssertEqual(RuleUpdates.decide(local: nil, remote: future, expectedName: "AGE"), .requiresNewerClient)
+
+        let other = rule(#"{"name":"其他","version":"3","api":"8"}"#)
+        guard case .failed = RuleUpdates.decide(local: nil, remote: other, expectedName: "AGE") else {
+            return XCTFail("expected a name mismatch")
+        }
+    }
+
+    func testFileURLAndCatalogQuery() throws {
+        XCTAssertEqual(
+            RuleCatalog.fileURL(name: "a b", mirror: false),
+            "https://raw.githubusercontent.com/Predidit/KazumiRules/main/a%20b.json"
+        )
+        XCTAssertEqual(
+            RuleCatalog.indexURL(mirror: true),
+            "https://raw.gitcode.com/gh_mirrors/ka/KazumiRules/raw/main/index.json"
+        )
+        let items = [
+            RuleCatalogItem(name: "zeta", version: "1.0", useNativePlayer: true, author: "北", lastUpdate: 20, antiCrawlerEnabled: false),
+            RuleCatalogItem(name: "alpha", version: "2.0", useNativePlayer: true, author: "南", lastUpdate: 30, antiCrawlerEnabled: false),
+            RuleCatalogItem(name: "mid", version: "1.5", useNativePlayer: true, author: "", lastUpdate: 10, antiCrawlerEnabled: false),
+        ]
+        let installed = [
+            rule(#"{"name":"zeta","version":"1.0","api":"8"}"#),
+            rule(#"{"name":"mid","version":"1.0","api":"8"}"#),
+        ]
+        let updates = RuleCatalog.visible(items: items, installed: installed, query: "", filter: .updates, sort: .name)
+        XCTAssertEqual(updates.map(\.name), ["mid"])
+        let byAuthor = RuleCatalog.visible(items: items, installed: installed, query: "北", filter: .installed, sort: .lastUpdate)
+        XCTAssertEqual(byAuthor.map(\.name), ["zeta"])
+        XCTAssertEqual(RuleUpdates.updatableNames(installed: installed, catalog: items), ["mid"])
+        XCTAssertEqual(
+            RuleUpdates.availability(plugin: installed[0], catalog: items, loaded: true),
+            .latest
+        )
+        XCTAssertEqual(
+            RuleUpdates.availability(plugin: rule(#"{"name":"missing","version":"1","api":"8"}"#), catalog: items, loaded: false),
+            .unknown
+        )
+        XCTAssertEqual(RuleUpdates.batchMessage(RuleBatchUpdateResult(
+            updated: 1, requiresNewerClient: 1, failed: 0, notNewer: 2, hasNoCandidates: false
+        )), "更新完成：成功 1 条，不兼容 1 条，已跳过 2 条")
+        XCTAssertEqual(RuleUpdates.singleMessage(.notNewer, installing: false), "远程规则版本不高于本地，已跳过更新")
+    }
+
+    func testOldSettingsDecodeWithoutMirrorFlag() throws {
+        let json = """
+        {"accent":"green","dandanAppID":"","dandanAppSecret":"","danmakuDuration":8,"danmakuEnabled":true,"danmakuFontSize":18,"danmakuOpacity":0.92,"danmakuShield":[],"playbackRate":1,"showRating":true,"themeMode":"dark"}
+        """
+        let settings = try JSONDecoder().decode(AppSettings.self, from: Data(json.utf8))
+        XCTAssertEqual(settings.themeMode, "dark")
+        XCTAssertFalse(settings.useRuleMirror)
+    }
+
+    private func rule(_ json: String) -> PluginRule {
+        PluginRule(json: try! JSONValue.parse(json))
     }
 }

@@ -88,6 +88,8 @@ public struct AppSettings: Equatable, Sendable, Codable {
     public var dandanAppID: String
     public var dandanAppSecret: String
     public var showRating: Bool
+    /// Flutter `SettingsKeys.enableGitProxy`: fetch the rule index from the mirror.
+    public var useRuleMirror: Bool
 
     public static let `default` = AppSettings(
         themeMode: "system",
@@ -100,7 +102,8 @@ public struct AppSettings: Equatable, Sendable, Codable {
         playbackRate: 1,
         dandanAppID: "",
         dandanAppSecret: "",
-        showRating: true
+        showRating: true,
+        useRuleMirror: false
     )
 
     public init(
@@ -114,7 +117,8 @@ public struct AppSettings: Equatable, Sendable, Codable {
         playbackRate: Double,
         dandanAppID: String,
         dandanAppSecret: String,
-        showRating: Bool
+        showRating: Bool,
+        useRuleMirror: Bool = false
     ) {
         self.themeMode = themeMode
         self.accent = accent
@@ -127,6 +131,45 @@ public struct AppSettings: Equatable, Sendable, Codable {
         self.dandanAppID = dandanAppID
         self.dandanAppSecret = dandanAppSecret
         self.showRating = showRating
+        self.useRuleMirror = useRuleMirror
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case themeMode, accent, danmakuEnabled, danmakuOpacity, danmakuFontSize
+        case danmakuDuration, danmakuShield, playbackRate, dandanAppID, dandanAppSecret
+        case showRating, useRuleMirror
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        themeMode = try container.decodeIfPresent(String.self, forKey: .themeMode) ?? "system"
+        accent = try container.decodeIfPresent(String.self, forKey: .accent) ?? "green"
+        danmakuEnabled = try container.decodeIfPresent(Bool.self, forKey: .danmakuEnabled) ?? true
+        danmakuOpacity = try container.decodeIfPresent(Double.self, forKey: .danmakuOpacity) ?? 0.92
+        danmakuFontSize = try container.decodeIfPresent(Double.self, forKey: .danmakuFontSize) ?? 18
+        danmakuDuration = try container.decodeIfPresent(Double.self, forKey: .danmakuDuration) ?? 8
+        danmakuShield = try container.decodeIfPresent([String].self, forKey: .danmakuShield) ?? []
+        playbackRate = try container.decodeIfPresent(Double.self, forKey: .playbackRate) ?? 1
+        dandanAppID = try container.decodeIfPresent(String.self, forKey: .dandanAppID) ?? ""
+        dandanAppSecret = try container.decodeIfPresent(String.self, forKey: .dandanAppSecret) ?? ""
+        showRating = try container.decodeIfPresent(Bool.self, forKey: .showRating) ?? true
+        useRuleMirror = try container.decodeIfPresent(Bool.self, forKey: .useRuleMirror) ?? false
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(themeMode, forKey: .themeMode)
+        try container.encode(accent, forKey: .accent)
+        try container.encode(danmakuEnabled, forKey: .danmakuEnabled)
+        try container.encode(danmakuOpacity, forKey: .danmakuOpacity)
+        try container.encode(danmakuFontSize, forKey: .danmakuFontSize)
+        try container.encode(danmakuDuration, forKey: .danmakuDuration)
+        try container.encode(danmakuShield, forKey: .danmakuShield)
+        try container.encode(playbackRate, forKey: .playbackRate)
+        try container.encode(dandanAppID, forKey: .dandanAppID)
+        try container.encode(dandanAppSecret, forKey: .dandanAppSecret)
+        try container.encode(showRating, forKey: .showRating)
+        try container.encode(useRuleMirror, forKey: .useRuleMirror)
     }
 }
 

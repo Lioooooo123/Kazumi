@@ -343,6 +343,7 @@ public struct PluginRule: Equatable, Sendable, Identifiable {
     public var type: String
     public var name: String
     public var version: String
+    public var author: String
     public var multiSources: Bool
     public var useWebview: Bool
     public var useNativePlayer: Bool
@@ -375,6 +376,7 @@ public struct PluginRule: Equatable, Sendable, Identifiable {
         type = json.looseString("type", default: "anime")
         name = json.looseString("name")
         version = json.looseString("version")
+        author = json.looseString("author")
         multiSources = json.looseBool("muliSources", default: true)
         useWebview = json.looseBool("useWebview", default: true)
         useNativePlayer = json.looseBool("useNativePlayer", default: true)
@@ -422,6 +424,9 @@ public struct PluginRule: Equatable, Sendable, Identifiable {
             "chapterMode": .string(chapterMode),
             "antiCrawlerConfig": antiCrawler.jsonObject(),
         ]
+        if !author.isEmpty {
+            object["author"] = .string(author)
+        }
         if searchMode == RuleMode.api || !searchAPI.request.url.isEmpty {
             object["searchApiConfig"] = searchAPI.jsonObject()
         }
